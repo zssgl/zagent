@@ -33,6 +33,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RunCreateRequest"
+            examples:
+              minimal:
+                $ref: "#/components/examples/RunCreateRequestMinimal"
       responses:
         "201":
           description: Run created
@@ -40,6 +43,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RunCreateResponse"
+              examples:
+                minimal:
+                  $ref: "#/components/examples/RunCreateResponseMinimal"
         default:
           $ref: "#/components/responses/ErrorResponse"
     get:
@@ -83,6 +89,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Run"
+              examples:
+                minimal:
+                  $ref: "#/components/examples/RunMinimal"
         default:
           $ref: "#/components/responses/ErrorResponse"
     delete:
@@ -122,18 +131,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EventListResponse"
+              examples:
+                minimal:
+                  $ref: "#/components/examples/EventListMinimal"
             text/event-stream:
               schema:
                 type: string
               examples:
-                sse:
-                  summary: SSE payload (each event is JSON in data)
-                  value: |
-                    event: run.started
-                    data: {"event_id":"evt_1","ts":"2025-01-01T00:00:00Z","type":"run.started","run_id":"run_1","payload":{"workflow":{"name":"daily-brief","version":"1.0.0"}}}
-
-                    event: step.completed
-                    data: {"event_id":"evt_2","ts":"2025-01-01T00:00:01Z","type":"step.completed","run_id":"run_1","step_id":"facts","payload":{"ok":true}}
+                minimal:
+                  $ref: "#/components/examples/SseStreamMinimal"
         default:
           $ref: "#/components/responses/ErrorResponse"
 
@@ -291,6 +297,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Artifact"
+              examples:
+                minimal:
+                  $ref: "#/components/examples/ArtifactMinimal"
         default:
           $ref: "#/components/responses/ErrorResponse"
 
@@ -356,6 +365,9 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            minimal:
+              $ref: "#/components/examples/ErrorMinimal"
   schemas:
     JsonValue:
       description: Arbitrary JSON value.
@@ -439,6 +451,14 @@ components:
             expires_at: { type: string, format: date-time }
             size_bytes: { type: integer, minimum: 0 }
             sha256: { type: string }
+      example:
+        artifact_id: "art_01J0EXAMPLE"
+        type: "message"
+        name: "daily-brief"
+        created_at: "2025-01-01T00:00:00Z"
+        mime_type: "text/markdown"
+        data:
+          text: "Facts recap..."
 
     ArtifactRef:
       type: object
@@ -507,6 +527,20 @@ components:
         metadata:
           type: object
           additionalProperties: { $ref: "#/components/schemas/JsonValue" }
+      example:
+        run_id: "run_01J0EXAMPLE"
+        workflow:
+          name: "daily-brief"
+          version: "1.0.0"
+        status: "running"
+        trace_id: "tr_01J0EXAMPLE"
+        tenant_id: "tenant_001"
+        timing:
+          created_at: "2025-01-01T00:00:00Z"
+          started_at: "2025-01-01T00:00:01Z"
+          wall_ms: 1234
+        input:
+          date: "2025-01-01"
 
     RunCreateRequest:
       type: object
@@ -525,6 +559,14 @@ components:
           description: Low-cardinality labels for indexing/filters.
           type: object
           additionalProperties: { type: string }
+      example:
+        workflow:
+          name: "daily-brief"
+          version: "1.0.0"
+        input:
+          date: "2025-01-01"
+        context:
+          channel: "wecom"
 
     RunCreateResponse:
       type: object
@@ -576,6 +618,14 @@ components:
             trace_id: { type: string }
             span_id: { type: string }
             parent_span_id: { type: string }
+      example:
+        event_id: "evt_01J0EXAMPLE"
+        ts: "2025-01-01T00:00:02Z"
+        type: "step.completed"
+        run_id: "run_01J0EXAMPLE"
+        step_id: "facts"
+        payload:
+          ok: true
 
     EventListResponse:
       type: object
@@ -651,3 +701,78 @@ components:
           description: Named JSON Schemas (draft 2020-12 compatible).
           additionalProperties:
             $ref: "#/components/schemas/JsonValue"
+  examples:
+    RunCreateRequestMinimal:
+      summary: Minimal run creation request
+      value:
+        workflow:
+          name: "daily-brief"
+          version: "1.0.0"
+        input:
+          date: "2025-01-01"
+    RunCreateResponseMinimal:
+      summary: Minimal run creation response
+      value:
+        run:
+          run_id: "run_01J0EXAMPLE"
+          workflow:
+            name: "daily-brief"
+            version: "1.0.0"
+          status: "queued"
+          timing:
+            created_at: "2025-01-01T00:00:00Z"
+    RunMinimal:
+      summary: Minimal run status response
+      value:
+        run_id: "run_01J0EXAMPLE"
+        workflow:
+          name: "daily-brief"
+          version: "1.0.0"
+        status: "running"
+        timing:
+          created_at: "2025-01-01T00:00:00Z"
+          started_at: "2025-01-01T00:00:01Z"
+          wall_ms: 1234
+        input:
+          date: "2025-01-01"
+    EventListMinimal:
+      summary: Minimal event list response
+      value:
+        data:
+          - event_id: "evt_01J0EXAMPLE"
+            ts: "2025-01-01T00:00:02Z"
+            type: "step.completed"
+            run_id: "run_01J0EXAMPLE"
+            step_id: "facts"
+            payload:
+              ok: true
+    SseStreamMinimal:
+      summary: Minimal SSE stream
+      value: |
+        event: run.started
+        data: {"event_id":"evt_01J0A","ts":"2025-01-01T00:00:00Z","type":"run.started","run_id":"run_01J0EXAMPLE","payload":{"workflow":{"name":"daily-brief","version":"1.0.0"}}}
+
+        event: step.completed
+        data: {"event_id":"evt_01J0B","ts":"2025-01-01T00:00:01Z","type":"step.completed","run_id":"run_01J0EXAMPLE","step_id":"facts","payload":{"ok":true}}
+
+        event: run.completed
+        data: {"event_id":"evt_01J0C","ts":"2025-01-01T00:00:02Z","type":"run.completed","run_id":"run_01J0EXAMPLE","payload":{"status":"succeeded"}}
+    ArtifactMinimal:
+      summary: Minimal artifact response
+      value:
+        artifact_id: "art_01J0EXAMPLE"
+        type: "record"
+        name: "facts-recap"
+        created_at: "2025-01-01T00:00:02Z"
+        mime_type: "application/json"
+        data:
+          facts:
+            visits: 120
+            revenue: 100000
+    ErrorMinimal:
+      summary: Minimal error response
+      value:
+        error:
+          code: "validation_error"
+          message: "input.date is required"
+          retryable: false

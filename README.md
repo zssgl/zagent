@@ -22,3 +22,7 @@ This repo currently contains an initial OpenAPI draft for a workflow-first agent
 
 - The `/v1/runs/{run_id}/events` endpoint supports both SSE and JSON pagination; clients should prefer SSE when available.
 - File artifacts return a `download_url` (typically pre-signed) via `GET /v1/artifacts/{artifact_id}`.
+- The gRPC draft (`proto/agent_runtime.proto`) mirrors the HTTP resources and avoids breaking changes by:
+  - Keeping names aligned with OpenAPI (`Run`, `Event`, `Artifact`, `HumanCheckpoint`).
+  - Using additive-only field evolution and reserving deprecated fields when needed.
+  - Treating `WorkflowRef` + `schema_hash` as compatibility anchors.

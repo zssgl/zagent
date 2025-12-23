@@ -1,0 +1,305 @@
+syntax = "proto3";
+
+package agent.runtime.v1;
+
+option java_package = "com.agent.runtime.v1";
+option java_multiple_files = true;
+
+service AgentRuntime {
+  rpc CreateRun (CreateRunRequest) returns (RunResponse);
+  rpc GetRun (GetRunRequest) returns (RunResponse);
+  rpc ListRuns (ListRunsRequest) returns (ListRunsResponse);
+  rpc CancelRun (CancelRunRequest) returns (RunResponse);
+
+  rpc ListEvents (ListEventsRequest) returns (ListEventsResponse);
+  rpc StreamEvents (StreamEventsRequest) returns (stream Event);
+
+  rpc ApproveCheckpoint (CheckpointDecisionRequest) returns (HumanCheckpoint);
+  rpc RejectCheckpoint (CheckpointDecisionRequest) returns (HumanCheckpoint);
+  rpc ProvideCheckpointInput (CheckpointInputRequest) returns (HumanCheckpoint);
+
+  rpc ListWorkflows (ListWorkflowsRequest) returns (ListWorkflowsResponse);
+  rpc GetWorkflow (GetWorkflowRequest) returns (Workflow);
+  rpc GetWorkflowSchemas (GetWorkflowSchemasRequest) returns (SchemaBundle);
+
+  rpc GetArtifact (GetArtifactRequest) returns (Artifact);
+}
+
+message JsonValue {
+  oneof kind {
+    bool bool_value = 1;
+    int64 int_value = 2;
+    double double_value = 3;
+    string string_value = 4;
+    JsonStruct struct_value = 5;
+    JsonList list_value = 6;
+    JsonNull null_value = 7;
+  }
+}
+
+message JsonStruct {
+  map<string, JsonValue> fields = 1;
+}
+
+message JsonList {
+  repeated JsonValue values = 1;
+}
+
+message JsonNull {}
+
+message WorkflowRef {
+  string name = 1;
+  string version = 2;
+}
+
+enum RunStatus {
+  RUN_STATUS_UNSPECIFIED = 0;
+  RUN_STATUS_QUEUED = 1;
+  RUN_STATUS_RUNNING = 2;
+  RUN_STATUS_WAITING_HUMAN = 3;
+  RUN_STATUS_SUCCEEDED = 4;
+  RUN_STATUS_FAILED = 5;
+  RUN_STATUS_CANCELED = 6;
+  RUN_STATUS_TIMED_OUT = 7;
+}
+
+message Timing {
+  string created_at = 1;
+  string started_at = 2;
+  string finished_at = 3;
+  int64 wall_ms = 4;
+}
+
+message Cost {
+  int64 total_tokens = 1;
+  int64 prompt_tokens = 2;
+  int64 completion_tokens = 3;
+  double total_usd = 4;
+}
+
+message Run {
+  string run_id = 1;
+  WorkflowRef workflow = 2;
+  RunStatus status = 3;
+  string trace_id = 4;
+  string tenant_id = 5;
+  Timing timing = 6;
+  JsonValue input = 7;
+  JsonValue context = 8;
+  JsonValue output = 9;
+  Error error = 10;
+  Cost cost = 11;
+  repeated ArtifactRef artifacts = 12;
+  repeated HumanCheckpoint checkpoints = 13;
+  map<string, JsonValue> metadata = 14;
+}
+
+message CreateRunRequest {
+  WorkflowRef workflow = 1;
+  JsonValue input = 2;
+  JsonValue context = 3;
+  map<string, JsonValue> metadata = 4;
+  map<string, string> labels = 5;
+  string idempotency_key = 6;
+}
+
+message RunResponse {
+  Run run = 1;
+}
+
+message GetRunRequest {
+  string run_id = 1;
+}
+
+message ListRunsRequest {
+  int32 limit = 1;
+  string cursor = 2;
+  RunStatus status = 3;
+  string workflow_name = 4;
+}
+
+message ListRunsResponse {
+  repeated Run data = 1;
+  string next_cursor = 2;
+}
+
+message CancelRunRequest {
+  string run_id = 1;
+}
+
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_RUN_STARTED = 1;
+  EVENT_TYPE_RUN_COMPLETED = 2;
+  EVENT_TYPE_RUN_FAILED = 3;
+  EVENT_TYPE_RUN_CANCELED = 4;
+  EVENT_TYPE_STEP_STARTED = 5;
+  EVENT_TYPE_STEP_COMPLETED = 6;
+  EVENT_TYPE_STEP_FAILED = 7;
+  EVENT_TYPE_TOOL_CALLED = 8;
+  EVENT_TYPE_TOOL_RESULT = 9;
+  EVENT_TYPE_LLM_REQUEST = 10;
+  EVENT_TYPE_LLM_RESPONSE = 11;
+  EVENT_TYPE_HITL_REQUIRED = 12;
+  EVENT_TYPE_HITL_RESOLVED = 13;
+  EVENT_TYPE_ARTIFACT_CREATED = 14;
+}
+
+message EventTrace {
+  string trace_id = 1;
+  string span_id = 2;
+  string parent_span_id = 3;
+}
+
+message Event {
+  string event_id = 1;
+  string ts = 2;
+  EventType type = 3;
+  string run_id = 4;
+  string step_id = 5;
+  string tool_name = 6;
+  JsonValue payload = 7;
+  EventTrace trace = 8;
+}
+
+message ListEventsRequest {
+  string run_id = 1;
+  int32 limit = 2;
+  string cursor = 3;
+}
+
+message ListEventsResponse {
+  repeated Event data = 1;
+  string next_cursor = 2;
+}
+
+message StreamEventsRequest {
+  string run_id = 1;
+}
+
+enum ArtifactType {
+  ARTIFACT_TYPE_UNSPECIFIED = 0;
+  ARTIFACT_TYPE_MESSAGE = 1;
+  ARTIFACT_TYPE_RECORD = 2;
+  ARTIFACT_TYPE_FILE = 3;
+}
+
+message ArtifactRef {
+  string artifact_id = 1;
+  ArtifactType type = 2;
+  string name = 3;
+}
+
+message ArtifactFile {
+  string download_url = 1;
+  string expires_at = 2;
+  int64 size_bytes = 3;
+  string sha256 = 4;
+}
+
+message Artifact {
+  string artifact_id = 1;
+  ArtifactType type = 2;
+  string name = 3;
+  string created_at = 4;
+  string mime_type = 5;
+  JsonValue data = 6;
+  ArtifactFile file = 7;
+}
+
+enum HumanCheckpointStatus {
+  HUMAN_CHECKPOINT_STATUS_UNSPECIFIED = 0;
+  HUMAN_CHECKPOINT_STATUS_REQUIRED = 1;
+  HUMAN_CHECKPOINT_STATUS_APPROVED = 2;
+  HUMAN_CHECKPOINT_STATUS_REJECTED = 3;
+  HUMAN_CHECKPOINT_STATUS_INPUT_PROVIDED = 4;
+  HUMAN_CHECKPOINT_STATUS_RESOLVED = 5;
+}
+
+message HumanCheckpoint {
+  string checkpoint_id = 1;
+  string run_id = 2;
+  HumanCheckpointStatus status = 3;
+  string created_at = 4;
+  string expires_at = 5;
+  string title = 6;
+  string instructions = 7;
+  JsonValue required_schema = 8;
+  JsonValue provided_input = 9;
+  CheckpointDecision decision = 10;
+}
+
+message CheckpointDecision {
+  bool approved = 1;
+  string note = 2;
+  string decided_at = 3;
+}
+
+message CheckpointDecisionRequest {
+  string run_id = 1;
+  string checkpoint_id = 2;
+  string note = 3;
+}
+
+message CheckpointInputRequest {
+  string run_id = 1;
+  string checkpoint_id = 2;
+  JsonValue input = 3;
+  string note = 4;
+}
+
+message Workflow {
+  string name = 1;
+  string version = 2;
+  string description = 3;
+  repeated string tags = 4;
+  int64 default_timeout_ms = 5;
+  string input_schema_ref = 6;
+  string output_schema_ref = 7;
+  JsonValue definition = 8;
+}
+
+message WorkflowSummary {
+  string name = 1;
+  string version = 2;
+  string description = 3;
+  repeated string tags = 4;
+}
+
+message ListWorkflowsRequest {
+  int32 limit = 1;
+  string cursor = 2;
+  string tag = 3;
+}
+
+message ListWorkflowsResponse {
+  repeated WorkflowSummary data = 1;
+  string next_cursor = 2;
+}
+
+message GetWorkflowRequest {
+  string name = 1;
+  string version = 2;
+}
+
+message GetWorkflowSchemasRequest {
+  string name = 1;
+  string version = 2;
+}
+
+message SchemaBundle {
+  WorkflowRef workflow = 1;
+  string schema_hash = 2;
+  map<string, JsonValue> schemas = 3;
+}
+
+message GetArtifactRequest {
+  string artifact_id = 1;
+}
+
+message Error {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+  JsonValue details = 4;
+}
