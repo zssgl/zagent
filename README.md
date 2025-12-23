@@ -3,6 +3,7 @@
 This repo currently contains an initial OpenAPI draft for a workflow-first agent runtime that can be called from frontends and SDKs in any language.
 
 - OpenAPI spec: `openapi/agent-runtime.yaml`
+- Embedded runtime prototype: `src/main.rs` (HTTP server over in-memory runtime)
 
 ## Design goals (contract-level)
 
@@ -17,6 +18,29 @@ This repo currently contains an initial OpenAPI draft for a workflow-first agent
 - Stream events: `GET /v1/runs/{run_id}/events` with `Accept: text/event-stream`
 - Poll status/result: `GET /v1/runs/{run_id}`
 - Discover schemas for UI/validation: `GET /v1/workflows/{name}/schemas`
+
+## Local prototype
+
+Run the embedded runtime:
+
+```bash
+cargo run
+```
+
+Minimal request:
+
+```bash
+curl -sS -X POST http://127.0.0.1:3000/v1/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow":{"name":"echo","version":"0.1.0"},"input":{"hello":"world"}}'
+```
+
+Stream events (SSE):
+
+```bash
+curl -N http://127.0.0.1:3000/v1/runs/<run_id>/events \
+  -H 'Accept: text/event-stream'
+```
 
 ## Notes
 
