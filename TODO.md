@@ -1,0 +1,27 @@
+# Development Plan (Todo)
+
+- [ ] Align API vs runtime scope (what endpoints are in MVP)
+- [ ] Finish minimal MVP endpoints
+  - [ ] `POST /v1/runs`
+  - [ ] `GET /v1/runs/{run_id}`
+  - [ ] `GET /v1/runs/{run_id}/events` (SSE + JSON fallback)
+  - [ ] `GET /v1/artifacts/{artifact_id}`
+- [ ] Add basic workflow registry endpoints
+  - [ ] `GET /v1/workflows`
+  - [ ] `GET /v1/workflows/{name}`
+  - [ ] `GET /v1/workflows/{name}/schemas` (even if stubbed)
+- [ ] Implement in-memory storage limits/retention
+  - [ ] Max events per run
+  - [ ] TTL for runs/artifacts
+- [ ] SDK scaffolding (Rust client)
+  - [ ] Create a minimal `agent-sdk` crate
+  - [ ] Implement create/run/get/events API
+- [ ] Multi-language SDK contract
+  - [ ] OpenAPI validation checks
+  - [ ] Codegen baseline (TS + Python)
+- [ ] Observability (minimal)
+  - [ ] Consistent event payloads
+  - [ ] Trace ID propagation
+- [ ] Packaging & dev ergonomics
+  - [ ] Dev config for `CARGO_TARGET_DIR=./target`
+  - [ ] Example scripts for curl and SSE
