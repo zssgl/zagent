@@ -10,7 +10,7 @@ async fn main() {
     runtime.register_workflow(Arc::new(EchoWorkflow)).await;
 
     let app = router(runtime);
-    let addr: SocketAddr = "127.0.0.1:3000".parse().expect("valid addr");
+    let addr: SocketAddr = "127.0.0.1:9000".parse().expect("valid addr");
     println!("agent runtime listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr)

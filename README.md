@@ -31,7 +31,7 @@ cargo run
 Minimal request:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:3000/v1/runs \
+curl -sS -X POST http://127.0.0.1:9000/v1/runs \
   -H 'Content-Type: application/json' \
   -d '{"workflow":{"name":"echo","version":"0.1.0"},"input":{"hello":"world"}}'
 ```
@@ -39,7 +39,7 @@ curl -sS -X POST http://127.0.0.1:3000/v1/runs \
 Stream events (SSE):
 
 ```bash
-curl -N http://127.0.0.1:3000/v1/runs/<run_id>/events \
+curl -N http://127.0.0.1:9000/v1/runs/<run_id>/events \
   -H 'Accept: text/event-stream'
 ```
 
