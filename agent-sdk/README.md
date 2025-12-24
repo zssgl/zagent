@@ -49,6 +49,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 cargo run -p agent_sdk --example sse
 ```
 
+## Meeting minutes to todo example
+
+```bash
+cargo run -p agent_sdk --example meeting_todo
+```
+
 You can override the base URL:
 
 ```bash
