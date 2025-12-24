@@ -11,6 +11,7 @@ use workflows::{EchoWorkflow, MeetingTodoWorkflow};
 
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
     let runtime = Arc::new(InMemoryRuntime::new());
     runtime
         .register_workflow_with_schemas(

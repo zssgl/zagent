@@ -7,6 +7,7 @@ pub struct LlmConfig {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
+    pub anthropic_version: String,
 }
 
 impl LlmConfig {
@@ -18,16 +19,24 @@ impl LlmConfig {
             return None;
         }
         let provider = std::env::var("LLM_PROVIDER").unwrap_or_else(|_| "openai".to_string());
-        let base_url = std::env::var("LLM_BASE_URL")
-            .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
+        let base_url = std::env::var("LLM_BASE_URL").unwrap_or_else(|_| {
+            if provider == "claude" {
+                "https://api.anthropic.com".to_string()
+            } else {
+                "https://api.openai.com/v1".to_string()
+            }
+        });
         let api_key = std::env::var("LLM_API_KEY").unwrap_or_default();
         let model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
+        let anthropic_version =
+            std::env::var("LLM_ANTHROPIC_VERSION").unwrap_or_else(|_| "2023-06-01".to_string());
         Some(Self {
             enabled,
             provider,
             base_url,
             api_key,
             model,
+            anthropic_version,
         })
     }
 }
@@ -50,7 +59,8 @@ impl LlmClient {
             return Err("LLM_API_KEY is required when LLM_ENABLED=1".to_string());
         }
         match self.config.provider.as_str() {
-            "openai" => self.call_openai(minutes).await,
+            "openai" | "openai-compatible" => self.call_openai(minutes).await,
+            "claude" => self.call_claude(minutes).await,
             _ => Err(format!("unsupported provider: {}", self.config.provider)),
         }
     }
@@ -91,6 +101,45 @@ Minutes:\n{}",
             .and_then(|message| message.get("content"))
             .and_then(|content| content.as_str())
             .ok_or_else(|| "missing content in LLM response".to_string())?;
+        let parsed = serde_json::from_str::<Value>(content).map_err(|err| err.to_string())?;
+        Ok(parsed)
+    }
+
+    async fn call_claude(&self, minutes: &str) -> Result<Value, String> {
+        let url = format!("{}/v1/messages", self.config.base_url.trim_end_matches('/'));
+        let prompt = format!(
+            "Extract a TODO list from the minutes. Return JSON only with shape: \
+{{\"todos\":[{{\"action\":\"...\",\"owner\":\"...\",\"due\":\"...\"}}]}}. \
+If owner/due are not mentioned, omit those fields.\nMinutes:\n{}",
+            minutes
+        );
+        let body = json!({
+            "model": self.config.model,
+            "max_tokens": 512,
+            "system": "Return JSON only.",
+            "messages": [
+                {"role": "user", "content": prompt}
+            ]
+        });
+        let response = self
+            .http
+            .post(url)
+            .header("x-api-key", &self.config.api_key)
+            .header("anthropic-version", &self.config.anthropic_version)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|err| err.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("llm status {}", response.status()));
+        }
+        let value = response.json::<Value>().await.map_err(|err| err.to_string())?;
+        let content = value
+            .get("content")
+            .and_then(|content| content.get(0))
+            .and_then(|item| item.get("text"))
+            .and_then(|text| text.as_str())
+            .ok_or_else(|| "missing content in Claude response".to_string())?;
         let parsed = serde_json::from_str::<Value>(content).map_err(|err| err.to_string())?;
         Ok(parsed)
     }

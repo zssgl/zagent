@@ -56,6 +56,17 @@ export LLM_API_KEY=your_key
 export LLM_MODEL=gpt-4o-mini
 ```
 
+Claude example:
+
+```bash
+export LLM_ENABLED=1
+export LLM_PROVIDER=claude
+export LLM_BASE_URL=https://api.anthropic.com
+export LLM_API_KEY=your_key
+export LLM_MODEL=claude-3-5-sonnet-20240620
+export LLM_ANTHROPIC_VERSION=2023-06-01
+```
+
 ## Notes
 
 - The `/v1/runs/{run_id}/events` endpoint supports both SSE and JSON pagination; clients should prefer SSE when available.
