@@ -1,6 +1,5 @@
 use agent_runtime::types::{RunCreateRequest, RunStatus, WorkflowRef};
 use agent_sdk::client::Client;
-use futures_util::StreamExt;
 use serde_json::json;
 
 #[tokio::main]
@@ -30,41 +29,7 @@ TODO: Schedule follow-up with product team
     let created = client.create_run(request).await?;
     let run_id = created.run.run_id;
 
-    let url = format!("{}/v1/runs/{}/events", base_url.trim_end_matches('/'), run_id);
-    let http = reqwest::Client::new();
-    let response = http
-        .get(url)
-        .header("accept", "text/event-stream")
-        .bearer_auth("dev-token")
-        .send()
-        .await?;
-    let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
-    let mut completed = false;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        let text = String::from_utf8_lossy(&chunk);
-        buffer.push_str(&text);
-        while let Some(pos) = buffer.find("\n\n") {
-            let event_block = buffer[..pos].to_string();
-            buffer = buffer[pos + 2..].to_string();
-            let mut event_type = None;
-            for line in event_block.lines() {
-                if let Some(rest) = line.strip_prefix("event:") {
-                    event_type = Some(rest.trim().to_string());
-                }
-            }
-            if matches!(event_type.as_deref(), Some("run.completed") | Some("run.failed")) {
-                completed = true;
-                break;
-            }
-        }
-        if completed {
-            break;
-        }
-    }
-
-    let run = client.get_run(&run_id).await?;
+    let run = client.wait_for_completion(&run_id, 10_000).await?;
     if !matches!(run.status, RunStatus::Succeeded) {
         println!("status: {:?}", run.status);
         println!("error: {:?}", run.error);

@@ -71,6 +71,7 @@ AGENT_BASE_URL=http://127.0.0.1:9000 cargo run -p agent_sdk --example sse
 - `Client::create_run_with_idempotency(idempotency_key, RunCreateRequest)`
 - `Client::get_run(run_id)`
 - `Client::list_events(run_id)`
+- `Client::wait_for_completion(run_id, timeout_ms)`
 
 ## Notes
 
