@@ -13,9 +13,13 @@
 - [ ] Implement in-memory storage limits/retention
   - [ ] Max events per run
   - [ ] TTL for runs/artifacts
-- [ ] SDK scaffolding (Rust client)
-  - [ ] Create a minimal `agent-sdk` crate
-  - [ ] Implement create/run/get/events API
+- [x] SDK scaffolding (Rust client)
+  - [x] Create a minimal `agent-sdk` crate
+  - [x] Implement create/run/get/events API
+- [x] SDK auth & headers support
+  - [x] Bearer auth helper
+  - [x] Custom headers helper
+  - [x] Idempotency key support
 - [ ] Multi-language SDK contract
   - [ ] OpenAPI validation checks
   - [ ] Codegen baseline (TS + Python)
