@@ -1,15 +1,15 @@
 # Development Plan (Todo)
 
-- [ ] Align API vs runtime scope (what endpoints are in MVP)
-- [ ] Finish minimal MVP endpoints
-  - [ ] `POST /v1/runs`
-  - [ ] `GET /v1/runs/{run_id}`
-  - [ ] `GET /v1/runs/{run_id}/events` (SSE + JSON fallback)
-  - [ ] `GET /v1/artifacts/{artifact_id}`
-- [ ] Add basic workflow registry endpoints
-  - [ ] `GET /v1/workflows`
-  - [ ] `GET /v1/workflows/{name}`
-  - [ ] `GET /v1/workflows/{name}/schemas` (even if stubbed)
+- [x] Align API vs runtime scope (what endpoints are in MVP)
+- [x] Finish minimal MVP endpoints
+  - [x] `POST /v1/runs`
+  - [x] `GET /v1/runs/{run_id}`
+  - [x] `GET /v1/runs/{run_id}/events` (SSE + JSON fallback)
+  - [x] `GET /v1/artifacts/{artifact_id}`
+- [x] Add basic workflow registry endpoints
+  - [x] `GET /v1/workflows`
+  - [x] `GET /v1/workflows/{name}`
+  - [x] `GET /v1/workflows/{name}/schemas` (stub)
 - [ ] Implement in-memory storage limits/retention
   - [ ] Max events per run
   - [ ] TTL for runs/artifacts
@@ -25,3 +25,9 @@
 - [ ] Packaging & dev ergonomics
   - [ ] Dev config for `CARGO_TARGET_DIR=./target`
   - [ ] Example scripts for curl and SSE
+- [ ] Workflow schema integration
+  - [ ] Allow registering input/output JSON Schemas per workflow
+  - [ ] Return real schemas in `/v1/workflows/{name}/schemas`
+- [ ] Basic persistence (optional)
+  - [ ] Swap in file/SQLite storage behind a trait
+  - [ ] Keep current in-memory implementation as default
