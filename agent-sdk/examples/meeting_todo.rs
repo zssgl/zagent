@@ -31,7 +31,7 @@ TODO: Schedule follow-up with product team
     let run_id = created.run.run_id;
 
     let mut output = None;
-    for _ in 0..10 {
+    for _ in 0..60 {  // Increased to 60 iterations (3 seconds total)
         let run = client.get_run(&run_id).await?;
         if matches!(run.status, RunStatus::Succeeded) {
             output = run.output;

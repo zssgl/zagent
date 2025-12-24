@@ -104,7 +104,8 @@ Minutes:\n{}",
             .and_then(|message| message.get("content"))
             .and_then(|content| content.as_str())
             .ok_or_else(|| "missing content in LLM response".to_string())?;
-        let parsed = serde_json::from_str::<Value>(content).map_err(|err| err.to_string())?;
+        let json_str = extract_json_content(content);
+        let parsed = serde_json::from_str::<Value>(&json_str).map_err(|err| err.to_string())?;
         Ok(parsed)
     }
 
@@ -146,9 +147,27 @@ If owner/due are not mentioned, omit those fields.\nMinutes:\n{}",
             .and_then(|item| item.get("text"))
             .and_then(|text| text.as_str())
             .ok_or_else(|| "missing content in Claude response".to_string())?;
-        let parsed = serde_json::from_str::<Value>(content).map_err(|err| err.to_string())?;
+        let json_str = extract_json_content(content);
+        let parsed = serde_json::from_str::<Value>(&json_str).map_err(|err| err.to_string())?;
         Ok(parsed)
     }
+}
+
+fn extract_json_content(content: &str) -> String {
+    let trimmed = content.trim();
+    if trimmed.starts_with("```") {
+        let mut lines = trimmed.lines();
+        let _first = lines.next();
+        let mut body = Vec::new();
+        for line in lines {
+            if line.trim_start().starts_with("```") {
+                break;
+            }
+            body.push(line);
+        }
+        return body.join("\n").trim().to_string();
+    }
+    trimmed.to_string()
 }
 
 #[cfg(test)]
