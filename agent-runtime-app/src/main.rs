@@ -38,9 +38,9 @@ async fn main() {
             Some(json!({
                 "type": "object",
                 "properties": {
-                    "minutes": { "type": "string" }
+                    "summary": { "type": "string" }
                 },
-                "required": ["minutes"]
+                "required": ["summary"]
             })),
             Some(json!({
                 "type": "object",

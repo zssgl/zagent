@@ -19,19 +19,21 @@ impl WorkflowRunner for MeetingTodoWorkflow {
     }
 
     async fn run(&self, input: Value) -> Result<WorkflowOutput, AgentError> {
-        let minutes = input
-            .get("minutes")
+        // 读取会议纪要文本，空值则走空字符串
+        let summary_text = input
+            .get("summary")
             .and_then(|value| value.as_str())
             .unwrap_or_default();
+        // 如果启用了 LLM，则优先使用模型抽取，否则走本地规则解析
         let output = if let Some(config) = LlmConfig::from_env() {
-            match LlmClient::new(config).extract_todos(minutes).await {
+            match LlmClient::new(config).extract_todos(summary_text).await {
                 Ok(value) => value,
                 Err(err) => {
                     return Err(AgentError::Retryable(format!("llm error: {}", err)));
                 }
             }
         } else {
-            let todos = extract_todos(minutes);
+            let todos = extract_todos(summary_text);
             json!({ "todos": todos })
         };
         let artifact = Artifact {
@@ -43,6 +45,7 @@ impl WorkflowRunner for MeetingTodoWorkflow {
             data: Some(output.clone()),
             file: None,
         };
+        // 产出结构化 todos 结果
         Ok(WorkflowOutput {
             output,
             artifacts: vec![artifact],
@@ -57,6 +60,7 @@ fn extract_todos(minutes: &str) -> Vec<Value> {
         if trimmed.is_empty() {
             continue;
         }
+        // 只识别带有 TODO/Action 的行（含常见标记和列表前缀）
         let mut text = trimmed;
         let lower = trimmed.to_ascii_lowercase();
         if lower.starts_with("todo:") {
@@ -72,6 +76,7 @@ fn extract_todos(minutes: &str) -> Vec<Value> {
         }
         let action = text.trim().trim_end_matches('.');
         if !action.is_empty() {
+            // 只输出 action 字段，owner/due 暂不做规则解析
             todos.push(json!({ "action": action }));
         }
     }
