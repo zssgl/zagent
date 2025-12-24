@@ -44,6 +44,18 @@ curl -N http://127.0.0.1:9000/v1/runs/<run_id>/events \
   -H 'Accept: text/event-stream'
 ```
 
+## LLM configuration (optional)
+
+The `meeting-todo` workflow can use an LLM when enabled. Set environment variables before running:
+
+```bash
+export LLM_ENABLED=1
+export LLM_PROVIDER=openai
+export LLM_BASE_URL=https://api.openai.com/v1
+export LLM_API_KEY=your_key
+export LLM_MODEL=gpt-4o-mini
+```
+
 ## Notes
 
 - The `/v1/runs/{run_id}/events` endpoint supports both SSE and JSON pagination; clients should prefer SSE when available.

@@ -5,6 +5,7 @@ use agent_runtime::runtime::InMemoryRuntime;
 use agent_runtime::server::router;
 use serde_json::{json, Value};
 
+mod llm;
 mod workflows;
 use workflows::{EchoWorkflow, MeetingTodoWorkflow};
 

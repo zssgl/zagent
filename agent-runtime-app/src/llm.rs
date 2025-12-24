@@ -1,0 +1,97 @@
+use serde_json::{json, Value};
+
+#[derive(Debug, Clone)]
+pub struct LlmConfig {
+    pub enabled: bool,
+    pub provider: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+}
+
+impl LlmConfig {
+    pub fn from_env() -> Option<Self> {
+        let enabled = std::env::var("LLM_ENABLED")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if !enabled {
+            return None;
+        }
+        let provider = std::env::var("LLM_PROVIDER").unwrap_or_else(|_| "openai".to_string());
+        let base_url = std::env::var("LLM_BASE_URL")
+            .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
+        let api_key = std::env::var("LLM_API_KEY").unwrap_or_default();
+        let model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
+        Some(Self {
+            enabled,
+            provider,
+            base_url,
+            api_key,
+            model,
+        })
+    }
+}
+
+pub struct LlmClient {
+    http: reqwest::Client,
+    config: LlmConfig,
+}
+
+impl LlmClient {
+    pub fn new(config: LlmConfig) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            config,
+        }
+    }
+
+    pub async fn extract_todos(&self, minutes: &str) -> Result<Value, String> {
+        if self.config.api_key.is_empty() {
+            return Err("LLM_API_KEY is required when LLM_ENABLED=1".to_string());
+        }
+        match self.config.provider.as_str() {
+            "openai" => self.call_openai(minutes).await,
+            _ => Err(format!("unsupported provider: {}", self.config.provider)),
+        }
+    }
+
+    async fn call_openai(&self, minutes: &str) -> Result<Value, String> {
+        let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+        let prompt = format!(
+            "You are a meeting assistant. Extract a TODO list from the minutes.\n\
+Return JSON only with shape: {{\"todos\":[{{\"action\":\"...\",\"owner\":\"...\",\"due\":\"...\"}}]}}.\n\
+If owner/due are not mentioned, omit those fields.\n\
+Minutes:\n{}",
+            minutes
+        );
+        let body = json!({
+            "model": self.config.model,
+            "messages": [
+                {"role": "system", "content": "Return JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            "response_format": { "type": "json_object" }
+        });
+        let response = self
+            .http
+            .post(url)
+            .bearer_auth(&self.config.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|err| err.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("llm status {}", response.status()));
+        }
+        let value = response.json::<Value>().await.map_err(|err| err.to_string())?;
+        let content = value
+            .get("choices")
+            .and_then(|choices| choices.get(0))
+            .and_then(|choice| choice.get("message"))
+            .and_then(|message| message.get("content"))
+            .and_then(|content| content.as_str())
+            .ok_or_else(|| "missing content in LLM response".to_string())?;
+        let parsed = serde_json::from_str::<Value>(content).map_err(|err| err.to_string())?;
+        Ok(parsed)
+    }
+}

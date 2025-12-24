@@ -4,6 +4,8 @@ use chrono::Utc;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use crate::llm::{LlmClient, LlmConfig};
+
 pub struct MeetingTodoWorkflow;
 
 #[async_trait::async_trait]
@@ -21,8 +23,17 @@ impl WorkflowRunner for MeetingTodoWorkflow {
             .get("minutes")
             .and_then(|value| value.as_str())
             .unwrap_or_default();
-        let todos = extract_todos(minutes);
-        let output = json!({ "todos": todos });
+        let output = if let Some(config) = LlmConfig::from_env() {
+            match LlmClient::new(config).extract_todos(minutes).await {
+                Ok(value) => value,
+                Err(err) => {
+                    return Err(AgentError::Retryable(format!("llm error: {}", err)));
+                }
+            }
+        } else {
+            let todos = extract_todos(minutes);
+            json!({ "todos": todos })
+        };
         let artifact = Artifact {
             artifact_id: format!("art_{}", Uuid::new_v4()),
             r#type: ArtifactType::Record,

@@ -10,6 +10,7 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "reqwest",
  "serde_json",
  "tokio",
  "uuid",
