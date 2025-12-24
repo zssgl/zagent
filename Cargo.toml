@@ -21,4 +21,4 @@ http-body-util = "0.1"
 tower = "0.5"
 
 [workspace]
-members = ["agent-sdk"]
+members = ["agent-sdk", "agent-runtime-app"]

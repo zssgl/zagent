@@ -3,7 +3,7 @@
 This repo currently contains an initial OpenAPI draft for a workflow-first agent runtime that can be called from frontends and SDKs in any language.
 
 - OpenAPI spec: `openapi/agent-runtime.yaml`
-- Embedded runtime prototype: `src/main.rs` (HTTP server over in-memory runtime)
+- Embedded runtime app: `agent-runtime-app/src/main.rs` (HTTP server over in-memory runtime)
 - Dev plan: `TODO.md`
 - Rust SDK (initial): `agent-sdk/src/client.rs`
 
@@ -23,10 +23,10 @@ This repo currently contains an initial OpenAPI draft for a workflow-first agent
 
 ## Local prototype
 
-Run the embedded runtime:
+Run the embedded runtime app:
 
 ```bash
-cargo run
+cargo run -p agent-runtime-app
 ```
 
 Minimal request:
