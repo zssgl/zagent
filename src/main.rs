@@ -2,12 +2,31 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use agent_runtime::runtime::{EchoWorkflow, InMemoryRuntime};
+use serde_json::json;
 use agent_runtime::server::router;
 
 #[tokio::main]
 async fn main() {
     let runtime = Arc::new(InMemoryRuntime::new());
-    runtime.register_workflow(Arc::new(EchoWorkflow)).await;
+    runtime
+        .register_workflow_with_schemas(
+            Arc::new(EchoWorkflow),
+            Some(json!({
+                "type": "object",
+                "properties": {
+                    "hello": { "type": "string" }
+                },
+                "required": ["hello"]
+            })),
+            Some(json!({
+                "type": "object",
+                "properties": {
+                    "echo": { "type": "object" }
+                },
+                "required": ["echo"]
+            })),
+        )
+        .await;
 
     let app = router(runtime);
     let addr: SocketAddr = "127.0.0.1:9000".parse().expect("valid addr");

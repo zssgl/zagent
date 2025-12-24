@@ -269,9 +269,15 @@ async fn get_workflow_returns_registered() {
 }
 
 #[tokio::test]
-async fn get_workflow_schemas_returns_stub() {
+async fn get_workflow_schemas_returns_schemas() {
     let runtime = Arc::new(InMemoryRuntime::new());
-    runtime.register_workflow(Arc::new(EchoWorkflow)).await;
+    runtime
+        .register_workflow_with_schemas(
+            Arc::new(EchoWorkflow),
+            Some(json!({ "type": "object" })),
+            Some(json!({ "type": "object" })),
+        )
+        .await;
     let app = router(runtime);
 
     let response = app
@@ -284,4 +290,8 @@ async fn get_workflow_schemas_returns_stub() {
         .expect("get schema response");
 
     assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let body_bytes = read_body_bytes(response.into_body()).await;
+    let payload: serde_json::Value =
+        serde_json::from_slice(&body_bytes).expect("parse schema response");
+    assert!(payload.get("schemas").is_some());
 }

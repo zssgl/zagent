@@ -10,6 +10,7 @@ use crate::types::{
     Artifact, ArtifactRef, ArtifactType, ErrorResponse, Event, EventType, Run, RunCreateRequest,
     RunStatus, SchemaBundle, Timing, Workflow, WorkflowRef, WorkflowSummary,
 };
+use sha2::Digest;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
@@ -35,8 +36,15 @@ pub trait WorkflowRunner: Send + Sync {
 }
 
 #[derive(Clone)]
+struct WorkflowEntry {
+    runner: Arc<dyn WorkflowRunner>,
+    input_schema: Option<Value>,
+    output_schema: Option<Value>,
+}
+
+#[derive(Clone)]
 pub struct InMemoryRuntime {
-    workflows: Arc<RwLock<HashMap<String, Arc<dyn WorkflowRunner>>>>,
+    workflows: Arc<RwLock<HashMap<String, WorkflowEntry>>>,
     runs: Arc<RwLock<HashMap<String, RunRecord>>>,
     artifacts: Arc<RwLock<HashMap<String, Artifact>>>,
 }
@@ -57,17 +65,33 @@ impl InMemoryRuntime {
     }
 
     pub async fn register_workflow(&self, workflow: Arc<dyn WorkflowRunner>) {
+        self.register_workflow_with_schemas(workflow, None, None).await;
+    }
+
+    pub async fn register_workflow_with_schemas(
+        &self,
+        workflow: Arc<dyn WorkflowRunner>,
+        input_schema: Option<Value>,
+        output_schema: Option<Value>,
+    ) {
         let mut workflows = self.workflows.write().await;
-        workflows.insert(workflow.name().to_string(), workflow);
+        workflows.insert(
+            workflow.name().to_string(),
+            WorkflowEntry {
+                runner: workflow,
+                input_schema,
+                output_schema,
+            },
+        );
     }
 
     pub async fn list_workflows(&self) -> Vec<WorkflowSummary> {
         let workflows = self.workflows.read().await;
         workflows
             .values()
-            .map(|workflow| WorkflowSummary {
-                name: workflow.name().to_string(),
-                version: workflow.version().map(|v| v.to_string()),
+            .map(|entry| WorkflowSummary {
+                name: entry.runner.name().to_string(),
+                version: entry.runner.version().map(|v| v.to_string()),
                 description: None,
                 tags: Vec::new(),
             })
@@ -76,9 +100,9 @@ impl InMemoryRuntime {
 
     pub async fn get_workflow(&self, name: &str) -> Option<Workflow> {
         let workflows = self.workflows.read().await;
-        workflows.get(name).map(|workflow| Workflow {
-            name: workflow.name().to_string(),
-            version: workflow.version().map(|v| v.to_string()),
+        workflows.get(name).map(|entry| Workflow {
+            name: entry.runner.name().to_string(),
+            version: entry.runner.version().map(|v| v.to_string()),
             description: None,
             tags: Vec::new(),
             input_schema_ref: None,
@@ -88,15 +112,22 @@ impl InMemoryRuntime {
 
     pub async fn get_workflow_schemas(&self, name: &str) -> Option<SchemaBundle> {
         let workflows = self.workflows.read().await;
-        workflows.get(name).map(|workflow| {
+        workflows.get(name).map(|entry| {
             let workflow_ref = WorkflowRef {
-                name: workflow.name().to_string(),
-                version: workflow.version().map(|v| v.to_string()),
+                name: entry.runner.name().to_string(),
+                version: entry.runner.version().map(|v| v.to_string()),
             };
+            let mut schemas = HashMap::new();
+            if let Some(schema) = &entry.input_schema {
+                schemas.insert("input".to_string(), schema.clone());
+            }
+            if let Some(schema) = &entry.output_schema {
+                schemas.insert("output".to_string(), schema.clone());
+            }
             SchemaBundle {
                 workflow: workflow_ref,
-                schema_hash: "stub".to_string(),
-                schemas: HashMap::new(),
+                schema_hash: hash_schemas(&schemas),
+                schemas,
             }
         })
     }
@@ -104,7 +135,7 @@ impl InMemoryRuntime {
     pub async fn create_run(&self, req: RunCreateRequest) -> Result<Run, ErrorResponse> {
         let workflow_name = req.workflow.name.clone();
         let workflows = self.workflows.read().await;
-        let workflow = workflows.get(&workflow_name).cloned().ok_or_else(|| {
+        let entry = workflows.get(&workflow_name).cloned().ok_or_else(|| {
             ErrorResponse {
                 code: "workflow_not_found".to_string(),
                 message: format!("workflow {} not registered", workflow_name),
@@ -125,8 +156,8 @@ impl InMemoryRuntime {
         let run = Run {
             run_id: run_id.clone(),
             workflow: WorkflowRef {
-                name: workflow.name().to_string(),
-                version: workflow.version().map(|v| v.to_string()),
+                name: entry.runner.name().to_string(),
+                version: entry.runner.version().map(|v| v.to_string()),
             },
             status: RunStatus::Queued,
             trace_id: None,
@@ -149,7 +180,7 @@ impl InMemoryRuntime {
 
         let runtime = self.clone();
         tokio::spawn(async move {
-            runtime.execute_run(run_id, workflow, req.input).await;
+            runtime.execute_run(run_id, entry.runner, req.input).await;
         });
 
         Ok(run)
@@ -373,4 +404,17 @@ impl WorkflowRunner for EchoWorkflow {
             artifacts: vec![artifact],
         })
     }
+}
+
+fn hash_schemas(schemas: &HashMap<String, Value>) -> String {
+    let mut items: Vec<(&String, &Value)> = schemas.iter().collect();
+    items.sort_by(|a, b| a.0.cmp(b.0));
+    let mut hasher = sha2::Sha256::new();
+    for (key, value) in items {
+        hasher.update(key.as_bytes());
+        if let Ok(encoded) = serde_json::to_vec(value) {
+            hasher.update(encoded);
+        }
+    }
+    format!("{:x}", hasher.finalize())
 }

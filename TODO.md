@@ -25,9 +25,9 @@
 - [ ] Packaging & dev ergonomics
   - [ ] Dev config for `CARGO_TARGET_DIR=./target`
   - [ ] Example scripts for curl and SSE
-- [ ] Workflow schema integration
-  - [ ] Allow registering input/output JSON Schemas per workflow
-  - [ ] Return real schemas in `/v1/workflows/{name}/schemas`
+- [x] Workflow schema integration
+  - [x] Allow registering input/output JSON Schemas per workflow
+  - [x] Return real schemas in `/v1/workflows/{name}/schemas`
 - [ ] Basic persistence (optional)
   - [ ] Swap in file/SQLite storage behind a trait
   - [ ] Keep current in-memory implementation as default
