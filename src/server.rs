@@ -14,6 +14,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use crate::runtime::InMemoryRuntime;
 use crate::types::{
     Artifact, Event, EventListResponse, ErrorResponse, Run, RunCreateRequest, RunCreateResponse,
+    SchemaBundle, Workflow, WorkflowListResponse,
 };
 
 #[derive(Clone)]
@@ -28,6 +29,9 @@ pub fn router(runtime: Arc<InMemoryRuntime>) -> Router {
         .route("/v1/runs/:run_id", get(get_run))
         .route("/v1/runs/:run_id/events", get(get_events))
         .route("/v1/artifacts/:artifact_id", get(get_artifact))
+        .route("/v1/workflows", get(list_workflows))
+        .route("/v1/workflows/:name", get(get_workflow))
+        .route("/v1/workflows/:name/schemas", get(get_workflow_schemas))
         .with_state(state)
 }
 
@@ -129,6 +133,52 @@ async fn get_artifact(
             Json(ErrorResponse {
                 code: "not_found".to_string(),
                 message: "artifact not found".to_string(),
+                retryable: false,
+                details: None,
+            }),
+        )),
+    }
+}
+
+async fn list_workflows(
+    State(state): State<AppState>,
+) -> Result<Json<WorkflowListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let data = state.runtime.list_workflows().await;
+    Ok(Json(WorkflowListResponse {
+        data,
+        next_cursor: None,
+    }))
+}
+
+async fn get_workflow(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Result<Json<Workflow>, (StatusCode, Json<ErrorResponse>)> {
+    match state.runtime.get_workflow(&name).await {
+        Some(workflow) => Ok(Json(workflow)),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                code: "not_found".to_string(),
+                message: "workflow not found".to_string(),
+                retryable: false,
+                details: None,
+            }),
+        )),
+    }
+}
+
+async fn get_workflow_schemas(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Result<Json<SchemaBundle>, (StatusCode, Json<ErrorResponse>)> {
+    match state.runtime.get_workflow_schemas(&name).await {
+        Some(bundle) => Ok(Json(bundle)),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                code: "not_found".to_string(),
+                message: "workflow not found".to_string(),
                 retryable: false,
                 details: None,
             }),

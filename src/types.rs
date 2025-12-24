@@ -151,6 +151,46 @@ pub struct EventListResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Workflow {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_schema_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowSummary {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowListResponse {
+    pub data: Vec<WorkflowSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SchemaBundle {
+    pub workflow: WorkflowRef,
+    pub schema_hash: String,
+    pub schemas: std::collections::HashMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EventType {
     #[serde(rename = "run.started")]
     RunStarted,

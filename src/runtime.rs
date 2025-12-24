@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::types::{
     Artifact, ArtifactRef, ArtifactType, ErrorResponse, Event, EventType, Run, RunCreateRequest,
-    RunStatus, Timing, WorkflowRef,
+    RunStatus, SchemaBundle, Timing, Workflow, WorkflowRef, WorkflowSummary,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -26,7 +26,7 @@ pub struct WorkflowOutput {
 }
 
 #[async_trait::async_trait]
-pub trait Workflow: Send + Sync {
+pub trait WorkflowRunner: Send + Sync {
     fn name(&self) -> &'static str;
     fn version(&self) -> Option<&'static str> {
         None
@@ -36,7 +36,7 @@ pub trait Workflow: Send + Sync {
 
 #[derive(Clone)]
 pub struct InMemoryRuntime {
-    workflows: Arc<RwLock<HashMap<String, Arc<dyn Workflow>>>>,
+    workflows: Arc<RwLock<HashMap<String, Arc<dyn WorkflowRunner>>>>,
     runs: Arc<RwLock<HashMap<String, RunRecord>>>,
     artifacts: Arc<RwLock<HashMap<String, Artifact>>>,
 }
@@ -56,9 +56,49 @@ impl InMemoryRuntime {
         }
     }
 
-    pub async fn register_workflow(&self, workflow: Arc<dyn Workflow>) {
+    pub async fn register_workflow(&self, workflow: Arc<dyn WorkflowRunner>) {
         let mut workflows = self.workflows.write().await;
         workflows.insert(workflow.name().to_string(), workflow);
+    }
+
+    pub async fn list_workflows(&self) -> Vec<WorkflowSummary> {
+        let workflows = self.workflows.read().await;
+        workflows
+            .values()
+            .map(|workflow| WorkflowSummary {
+                name: workflow.name().to_string(),
+                version: workflow.version().map(|v| v.to_string()),
+                description: None,
+                tags: Vec::new(),
+            })
+            .collect()
+    }
+
+    pub async fn get_workflow(&self, name: &str) -> Option<Workflow> {
+        let workflows = self.workflows.read().await;
+        workflows.get(name).map(|workflow| Workflow {
+            name: workflow.name().to_string(),
+            version: workflow.version().map(|v| v.to_string()),
+            description: None,
+            tags: Vec::new(),
+            input_schema_ref: None,
+            output_schema_ref: None,
+        })
+    }
+
+    pub async fn get_workflow_schemas(&self, name: &str) -> Option<SchemaBundle> {
+        let workflows = self.workflows.read().await;
+        workflows.get(name).map(|workflow| {
+            let workflow_ref = WorkflowRef {
+                name: workflow.name().to_string(),
+                version: workflow.version().map(|v| v.to_string()),
+            };
+            SchemaBundle {
+                workflow: workflow_ref,
+                schema_hash: "stub".to_string(),
+                schemas: HashMap::new(),
+            }
+        })
     }
 
     pub async fn create_run(&self, req: RunCreateRequest) -> Result<Run, ErrorResponse> {
@@ -138,7 +178,7 @@ impl InMemoryRuntime {
     async fn execute_run(
         &self,
         run_id: String,
-        workflow: Arc<dyn Workflow>,
+        workflow: Arc<dyn WorkflowRunner>,
         input: Value,
     ) {
         let started_at = Utc::now();
@@ -309,7 +349,7 @@ impl InMemoryRuntime {
 pub struct EchoWorkflow;
 
 #[async_trait::async_trait]
-impl Workflow for EchoWorkflow {
+impl WorkflowRunner for EchoWorkflow {
     fn name(&self) -> &'static str {
         "echo"
     }

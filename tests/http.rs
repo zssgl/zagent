@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use agent_runtime::runtime::{EchoWorkflow, InMemoryRuntime};
 use agent_runtime::server::router;
-use agent_runtime::types::{EventListResponse, RunCreateResponse};
+use agent_runtime::types::{EventListResponse, RunCreateResponse, WorkflowListResponse};
 use axum::body::Body;
 use http_body_util::BodyExt;
 use serde_json::json;
@@ -226,4 +226,62 @@ async fn get_artifact_not_found_returns_404() {
         .expect("get artifact response");
 
     assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn list_workflows_returns_registered() {
+    let runtime = Arc::new(InMemoryRuntime::new());
+    runtime.register_workflow(Arc::new(EchoWorkflow)).await;
+    let app = router(runtime);
+
+    let response = app
+        .oneshot(
+            axum::http::Request::get("/v1/workflows")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("list workflows response");
+
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let body_bytes = read_body_bytes(response.into_body()).await;
+    let list: WorkflowListResponse =
+        serde_json::from_slice(&body_bytes).expect("parse workflow list");
+    assert!(!list.data.is_empty());
+}
+
+#[tokio::test]
+async fn get_workflow_returns_registered() {
+    let runtime = Arc::new(InMemoryRuntime::new());
+    runtime.register_workflow(Arc::new(EchoWorkflow)).await;
+    let app = router(runtime);
+
+    let response = app
+        .oneshot(
+            axum::http::Request::get("/v1/workflows/echo")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("get workflow response");
+
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+}
+
+#[tokio::test]
+async fn get_workflow_schemas_returns_stub() {
+    let runtime = Arc::new(InMemoryRuntime::new());
+    runtime.register_workflow(Arc::new(EchoWorkflow)).await;
+    let app = router(runtime);
+
+    let response = app
+        .oneshot(
+            axum::http::Request::get("/v1/workflows/echo/schemas")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("get schema response");
+
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
 }
