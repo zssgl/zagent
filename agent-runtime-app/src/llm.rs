@@ -94,6 +94,9 @@ Minutes:\n{}",
             return Err(format!("llm status {}", response.status()));
         }
         let value = response.json::<Value>().await.map_err(|err| err.to_string())?;
+        if std::env::var("LLM_DEBUG").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false) {
+            eprintln!("LLM raw response: {}", value);
+        }
         let content = value
             .get("choices")
             .and_then(|choices| choices.get(0))
@@ -134,6 +137,9 @@ If owner/due are not mentioned, omit those fields.\nMinutes:\n{}",
             return Err(format!("llm status {}", response.status()));
         }
         let value = response.json::<Value>().await.map_err(|err| err.to_string())?;
+        if std::env::var("LLM_DEBUG").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false) {
+            eprintln!("LLM raw response: {}", value);
+        }
         let content = value
             .get("content")
             .and_then(|content| content.get(0))
@@ -142,5 +148,28 @@ If owner/due are not mentioned, omit those fields.\nMinutes:\n{}",
             .ok_or_else(|| "missing content in Claude response".to_string())?;
         let parsed = serde_json::from_str::<Value>(content).map_err(|err| err.to_string())?;
         Ok(parsed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn llm_connectivity() {
+        // Load .env file for tests
+        dotenvy::dotenv().ok();
+        
+        let Some(config) = LlmConfig::from_env() else {
+            eprintln!("LLM not enabled; set LLM_ENABLED=1 to run this test");
+            return;
+        };
+        let client = LlmClient::new(config);
+        let result = client
+            .extract_todos("Action: Prepare Q2 budget by Friday.")
+            .await
+            .expect("llm call");
+        assert!(result.get("todos").is_some());
     }
 }
