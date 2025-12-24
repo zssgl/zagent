@@ -1,13 +1,13 @@
 use agent_runtime::types::{RunCreateRequest, RunStatus, WorkflowRef};
 use agent_sdk::client::Client;
+use futures_util::StreamExt;
 use serde_json::json;
-use tokio::time::{sleep, Duration};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let base_url = std::env::var("AGENT_BASE_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:9000".to_string());
-    let client = Client::new(base_url).with_bearer_auth("dev-token");
+    let client = Client::new(base_url.clone()).with_bearer_auth("dev-token");
 
     let minutes = r#"
 Meeting recap
@@ -30,17 +30,48 @@ TODO: Schedule follow-up with product team
     let created = client.create_run(request).await?;
     let run_id = created.run.run_id;
 
-    let mut output = None;
-    for _ in 0..60 {  // Increased to 60 iterations (3 seconds total)
-        let run = client.get_run(&run_id).await?;
-        if matches!(run.status, RunStatus::Succeeded) {
-            output = run.output;
+    let url = format!("{}/v1/runs/{}/events", base_url.trim_end_matches('/'), run_id);
+    let http = reqwest::Client::new();
+    let response = http
+        .get(url)
+        .header("accept", "text/event-stream")
+        .bearer_auth("dev-token")
+        .send()
+        .await?;
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+    let mut completed = false;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        let text = String::from_utf8_lossy(&chunk);
+        buffer.push_str(&text);
+        while let Some(pos) = buffer.find("\n\n") {
+            let event_block = buffer[..pos].to_string();
+            buffer = buffer[pos + 2..].to_string();
+            let mut event_type = None;
+            for line in event_block.lines() {
+                if let Some(rest) = line.strip_prefix("event:") {
+                    event_type = Some(rest.trim().to_string());
+                }
+            }
+            if matches!(event_type.as_deref(), Some("run.completed") | Some("run.failed")) {
+                completed = true;
+                break;
+            }
+        }
+        if completed {
             break;
         }
-        sleep(Duration::from_millis(50)).await;
+    }
+
+    let run = client.get_run(&run_id).await?;
+    if !matches!(run.status, RunStatus::Succeeded) {
+        println!("status: {:?}", run.status);
+        println!("error: {:?}", run.error);
+        return Ok(());
     }
 
     println!("run_id: {}", run_id);
-    println!("todos: {}", output.unwrap_or_else(|| json!({})));
+    println!("todos: {}", run.output.unwrap_or_else(|| json!({})));
     Ok(())
 }
