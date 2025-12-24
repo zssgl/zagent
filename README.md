@@ -5,6 +5,7 @@ This repo currently contains an initial OpenAPI draft for a workflow-first agent
 - OpenAPI spec: `openapi/agent-runtime.yaml`
 - Embedded runtime prototype: `src/main.rs` (HTTP server over in-memory runtime)
 - Dev plan: `TODO.md`
+- Rust SDK (initial): `agent-sdk/src/client.rs`
 
 ## Design goals (contract-level)
 
