@@ -7,7 +7,7 @@ use serde_json::json;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let base_url = std::env::var("AGENT_BASE_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:9000".to_string());
-    let client = Client::new(base_url.clone());
+    let client = Client::new(base_url.clone()).with_bearer_auth("dev-token");
     let request = RunCreateRequest {
         workflow: WorkflowRef {
             name: "echo".to_string(),
@@ -27,6 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let response = http
         .get(url)
         .header("accept", "text/event-stream")
+        .bearer_auth("dev-token")
         .send()
         .await?;
 

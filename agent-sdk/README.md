@@ -18,7 +18,8 @@ use serde_json::json;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = Client::new("http://127.0.0.1:9000");
+    let client = Client::new("http://127.0.0.1:9000")
+        .with_bearer_auth("dev-token");
     let request = RunCreateRequest {
         workflow: WorkflowRef {
             name: "echo".to_string(),
@@ -57,11 +58,15 @@ AGENT_BASE_URL=http://127.0.0.1:9000 cargo run -p agent_sdk --example sse
 ## API
 
 - `Client::new(base_url)`
+- `Client::with_http(base_url, reqwest::Client)`
+- `Client::with_bearer_auth(token)`
+- `Client::with_header(name, value)`
 - `Client::create_run(RunCreateRequest)`
+- `Client::create_run_with_idempotency(idempotency_key, RunCreateRequest)`
 - `Client::get_run(run_id)`
 - `Client::list_events(run_id)`
 
 ## Notes
 
-- The SDK currently returns `UnexpectedStatus` for non-OK responses.
-- Auth headers and retries are not implemented yet (planned).
+- The SDK returns `ClientError::Api` when the server provides a structured error response.
+- Retries are not implemented yet (planned).
