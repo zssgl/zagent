@@ -4,15 +4,18 @@ use std::sync::Arc;
 use agent_runtime::runtime::InMemoryRuntime;
 use agent_runtime::server::router;
 use serde_json::json;
+use sqlx::MySqlPool;
 
 mod llm;
 mod workflows;
-use workflows::{ConversationWorkflow, EchoWorkflow, MeetingTodoWorkflow};
+use workflows::{ConversationWorkflow, DailyBriefingWorkflow, EchoWorkflow, MeetingTodoWorkflow};
 
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
     let runtime = Arc::new(InMemoryRuntime::new());
+    let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let db = MySqlPool::connect(&db_url).await.expect("connect db");
     runtime
         .register_workflow_with_schemas(
             Arc::new(EchoWorkflow),
@@ -101,6 +104,33 @@ async fn main() {
                     }
                 },
                 "required": ["conversation_id", "reply", "messages"]
+            })),
+        )
+        .await;
+    runtime
+        .register_workflow_with_schemas(
+            Arc::new(DailyBriefingWorkflow::new(db.clone())),
+            Some(json!({
+                "type": "object",
+                "properties": {
+                    "category": { "type": "string", "enum": ["daily", "weekly"] },
+                    "date": { "type": "string" },
+                    "source": { "type": "string" }
+                }
+            })),
+            Some(json!({
+                "type": "object",
+                "properties": {
+                    "date": { "type": "string" },
+                    "category": { "type": "string" },
+                    "source": { "type": "string" },
+                    "facts_recap": { "type": "object" },
+                    "tomorrow_customers": { "type": "array" },
+                    "risks": { "type": "array" },
+                    "checklist": { "type": "array" },
+                    "report_path": { "type": "string" }
+                },
+                "required": ["date", "category", "facts_recap", "report_path"]
             })),
         )
         .await;
