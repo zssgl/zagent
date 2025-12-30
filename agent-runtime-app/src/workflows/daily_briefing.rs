@@ -1,6 +1,8 @@
 use agent_runtime::runtime::{AgentError, WorkflowOutput, WorkflowRunner};
 use agent_runtime::types::{Artifact, ArtifactType};
 use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::{MySqlPool, Row};
@@ -78,8 +80,8 @@ impl WorkflowRunner for DailyBriefingWorkflow {
         .await
         .map_err(|err| AgentError::Retryable(format!("db error: {}", err)))?;
 
-        let payment_total: f64 = sqlx::query_scalar(
-            "SELECT COALESCE(SUM(p.Amount) + 0.0, 0) \
+        let payment_total: Decimal = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(p.Amount), 0) \
              FROM billoperationrecordpayments p \
              JOIN billoperationrecords r ON p.RecordId = r.ID \
              WHERE r.OperationTime >= ? AND r.OperationTime < ?",
@@ -89,6 +91,7 @@ impl WorkflowRunner for DailyBriefingWorkflow {
         .fetch_one(&self.db)
         .await
         .map_err(|err| AgentError::Retryable(format!("db error: {}", err)))?;
+        let payment_total = payment_total.to_f64().unwrap_or(0.0);
 
         let appointment_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM appointments \
