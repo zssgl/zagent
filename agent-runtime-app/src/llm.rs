@@ -46,6 +46,12 @@ pub struct LlmClient {
     config: LlmConfig,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LlmMessage {
+    pub role: String,
+    pub content: String,
+}
+
 impl LlmClient {
     pub fn new(config: LlmConfig) -> Self {
         Self {
@@ -61,6 +67,17 @@ impl LlmClient {
         match self.config.provider.as_str() {
             "openai" | "openai-compatible" => self.call_openai(minutes).await,
             "claude" => self.call_claude(minutes).await,
+            _ => Err(format!("unsupported provider: {}", self.config.provider)),
+        }
+    }
+
+    pub async fn chat(&self, messages: &[LlmMessage]) -> Result<String, String> {
+        if self.config.api_key.is_empty() {
+            return Err("LLM_API_KEY is required when LLM_ENABLED=1".to_string());
+        }
+        match self.config.provider.as_str() {
+            "openai" | "openai-compatible" => self.call_openai_chat(messages).await,
+            "claude" => self.call_claude_chat(messages).await,
             _ => Err(format!("unsupported provider: {}", self.config.provider)),
         }
     }
@@ -109,6 +126,37 @@ Minutes:\n{}",
         Ok(parsed)
     }
 
+    async fn call_openai_chat(&self, messages: &[LlmMessage]) -> Result<String, String> {
+        let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+        let body = json!({
+            "model": self.config.model,
+            "messages": messages,
+        });
+        let response = self
+            .http
+            .post(url)
+            .bearer_auth(&self.config.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|err| err.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("llm status {}", response.status()));
+        }
+        let value = response.json::<Value>().await.map_err(|err| err.to_string())?;
+        if std::env::var("LLM_DEBUG").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false) {
+            eprintln!("LLM raw response: {}", value);
+        }
+        let content = value
+            .get("choices")
+            .and_then(|choices| choices.get(0))
+            .and_then(|choice| choice.get("message"))
+            .and_then(|message| message.get("content"))
+            .and_then(|content| content.as_str())
+            .ok_or_else(|| "missing content in LLM response".to_string())?;
+        Ok(content.to_string())
+    }
+
     async fn call_claude(&self, minutes: &str) -> Result<Value, String> {
         let url = format!("{}/v1/messages", self.config.base_url.trim_end_matches('/'));
         let prompt = format!(
@@ -151,6 +199,40 @@ If owner/due are not mentioned, omit those fields.\nMinutes:\n{}",
         let parsed = serde_json::from_str::<Value>(&json_str).map_err(|err| err.to_string())?;
         Ok(parsed)
     }
+
+    async fn call_claude_chat(&self, messages: &[LlmMessage]) -> Result<String, String> {
+        let url = format!("{}/v1/messages", self.config.base_url.trim_end_matches('/'));
+        let (system, claude_messages) = split_system_messages(messages);
+        let body = json!({
+            "model": self.config.model,
+            "max_tokens": 512,
+            "system": system,
+            "messages": claude_messages,
+        });
+        let response = self
+            .http
+            .post(url)
+            .header("x-api-key", &self.config.api_key)
+            .header("anthropic-version", &self.config.anthropic_version)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|err| err.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("llm status {}", response.status()));
+        }
+        let value = response.json::<Value>().await.map_err(|err| err.to_string())?;
+        if std::env::var("LLM_DEBUG").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false) {
+            eprintln!("LLM raw response: {}", value);
+        }
+        let content = value
+            .get("content")
+            .and_then(|content| content.get(0))
+            .and_then(|item| item.get("text"))
+            .and_then(|text| text.as_str())
+            .ok_or_else(|| "missing content in Claude response".to_string())?;
+        Ok(content.to_string())
+    }
 }
 
 fn extract_json_content(content: &str) -> String {
@@ -168,6 +250,19 @@ fn extract_json_content(content: &str) -> String {
         return body.join("\n").trim().to_string();
     }
     trimmed.to_string()
+}
+
+fn split_system_messages(messages: &[LlmMessage]) -> (String, Vec<LlmMessage>) {
+    let mut system_parts = Vec::new();
+    let mut rest = Vec::new();
+    for msg in messages {
+        if msg.role == "system" {
+            system_parts.push(msg.content.clone());
+        } else {
+            rest.push(msg.clone());
+        }
+    }
+    (system_parts.join("\n"), rest)
 }
 
 #[cfg(test)]

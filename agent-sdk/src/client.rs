@@ -59,7 +59,6 @@ impl Client {
         &self,
         request: RunCreateRequest,
     ) -> Result<RunCreateResponse, ClientError> {
-        let url = format!("{}/v1/runs", self.base_url.trim_end_matches('/'));
         self.create_run_inner(None, request).await
     }
 
@@ -119,11 +118,12 @@ impl Client {
             .header("accept", "text/event-stream")
             .send()
             .await?;
-        if response.status() != StatusCode::OK {
+        let status = response.status();
+        if status != StatusCode::OK {
             if let Ok(api_error) = response.json::<ApiErrorEnvelope>().await {
                 return Err(ClientError::Api(api_error.error));
             }
-            return Err(ClientError::UnexpectedStatus(response.status()));
+            return Err(ClientError::UnexpectedStatus(status));
         }
 
         let mut stream = response.bytes_stream();

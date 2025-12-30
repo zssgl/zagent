@@ -61,19 +61,18 @@ fn extract_todos(minutes: &str) -> Vec<Value> {
             continue;
         }
         // 只识别带有 TODO/Action 的行（含常见标记和列表前缀）
-        let mut text = trimmed;
         let lower = trimmed.to_ascii_lowercase();
-        if lower.starts_with("todo:") {
-            text = trimmed[5..].trim();
+        let text = if lower.starts_with("todo:") {
+            trimmed[5..].trim()
         } else if lower.starts_with("action:") {
-            text = trimmed[7..].trim();
+            trimmed[7..].trim()
         } else if lower.starts_with("action item:") {
-            text = trimmed[12..].trim();
+            trimmed[12..].trim()
         } else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
-            text = &trimmed[2..];
+            &trimmed[2..]
         } else {
             continue;
-        }
+        };
         let action = text.trim().trim_end_matches('.');
         if !action.is_empty() {
             // 只输出 action 字段，owner/due 暂不做规则解析

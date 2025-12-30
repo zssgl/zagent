@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use agent_runtime::runtime::InMemoryRuntime;
 use agent_runtime::server::router;
-use serde_json::{json, Value};
+use serde_json::json;
 
 mod llm;
 mod workflows;
-use workflows::{EchoWorkflow, MeetingTodoWorkflow};
+use workflows::{ConversationWorkflow, EchoWorkflow, MeetingTodoWorkflow};
 
 #[tokio::main]
 async fn main() {
@@ -59,6 +59,48 @@ async fn main() {
                     }
                 },
                 "required": ["todos"]
+            })),
+        )
+        .await;
+    runtime
+        .register_workflow_with_schemas(
+            Arc::new(ConversationWorkflow),
+            Some(json!({
+                "type": "object",
+                "properties": {
+                    "conversation_id": { "type": "string" },
+                    "messages": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "role": { "type": "string" },
+                                "content": { "type": "string" }
+                            },
+                            "required": ["role", "content"]
+                        }
+                    }
+                },
+                "required": ["messages"]
+            })),
+            Some(json!({
+                "type": "object",
+                "properties": {
+                    "conversation_id": { "type": "string" },
+                    "reply": { "type": "string" },
+                    "messages": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "role": { "type": "string" },
+                                "content": { "type": "string" }
+                            },
+                            "required": ["role", "content"]
+                        }
+                    }
+                },
+                "required": ["conversation_id", "reply", "messages"]
             })),
         )
         .await;
