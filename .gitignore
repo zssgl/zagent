@@ -19,3 +19,5 @@ target/
 *.dll
 .idea/
 .vscode/
+
+reports/

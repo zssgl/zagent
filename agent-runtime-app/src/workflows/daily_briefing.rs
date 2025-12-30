@@ -9,6 +9,8 @@ use sqlx::{MySqlPool, Row};
 use tokio::fs;
 use uuid::Uuid;
 
+use crate::llm::{LlmClient, LlmConfig, LlmMessage};
+
 #[derive(Debug, Deserialize)]
 struct DailyBriefingInput {
     category: Option<String>,
@@ -169,7 +171,7 @@ impl WorkflowRunner for DailyBriefingWorkflow {
             "同步关键客户需求和重点风险点".to_string(),
         ];
 
-        let report_md = render_report(
+        let fallback_report = render_report(
             date,
             operation_count,
             payment_total,
@@ -180,6 +182,29 @@ impl WorkflowRunner for DailyBriefingWorkflow {
             &risks,
             &checklist,
         );
+        let report_md = match LlmConfig::from_env() {
+            Some(config) => {
+                let client = LlmClient::new(config);
+                match build_llm_report(
+                    &client,
+                    date,
+                    operation_count,
+                    payment_total,
+                    appointment_count,
+                    return_visit_count,
+                    wecom_trace_count,
+                    &tomorrow_list,
+                    &risks,
+                    &checklist,
+                )
+                .await
+                {
+                    Ok(content) if !content.trim().is_empty() => content,
+                    _ => fallback_report.clone(),
+                }
+            }
+            None => fallback_report.clone(),
+        };
 
         let report_dir = "reports";
         fs::create_dir_all(report_dir)
@@ -289,4 +314,104 @@ fn render_report(
         lines.push(format!("- {}", item));
     }
     lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires LLM and network access"]
+    async fn llm_briefing_sections() {
+        dotenvy::dotenv().ok();
+        let Some(config) = LlmConfig::from_env() else {
+            eprintln!("LLM not enabled; set LLM_ENABLED=1 to run this test");
+            return;
+        };
+        let client = LlmClient::new(config);
+        let tomorrow_list = vec![json!({
+            "customer_name": "张三",
+            "time": "10:00",
+            "doctor": "李医生",
+            "consultant": "王顾问",
+        })];
+        let risks = vec!["今日预约为 0，需排查获客/预约渠道".to_string()];
+        let checklist = vec!["核对明日预约客户名单并逐一确认到诊".to_string()];
+
+        let content = build_llm_report(
+            &client,
+            NaiveDate::from_ymd_opt(2025, 1, 6).unwrap(),
+            12,
+            3456.78,
+            0,
+            3,
+            5,
+            &tomorrow_list,
+            &risks,
+            &checklist,
+        )
+        .await
+        .expect("llm report");
+
+        assert!(content.contains("Facts Recap"));
+        assert!(content.contains("明日客户清单"));
+        assert!(content.contains("风险提示"));
+        assert!(content.contains("执行 checklist"));
+    }
+}
+
+async fn build_llm_report(
+    client: &LlmClient,
+    date: NaiveDate,
+    operation_count: i64,
+    payment_total: f64,
+    appointment_count: i64,
+    return_visit_count: i64,
+    wecom_trace_count: i64,
+    tomorrow_list: &[Value],
+    risks: &[String],
+    checklist: &[String],
+) -> Result<String, AgentError> {
+    let facts = json!({
+        "date": date.format("%Y-%m-%d").to_string(),
+        "operation_count": operation_count,
+        "payment_total": payment_total,
+        "appointment_count": appointment_count,
+        "return_visit_count": return_visit_count,
+        "wecom_trace_count": wecom_trace_count,
+    });
+
+    let prompt = format!(
+        "You are an operations assistant. Write a concise, readable daily evening briefing in Markdown.\n\
+Output MUST include these section titles exactly:\n\
+1) Facts Recap\n\
+2) 明日客户清单\n\
+3) 风险提示\n\
+4) 执行 checklist\n\n\
+Keep it factual, avoid fabricating data, and do not add extra sections.\n\
+Facts JSON: {}\n\
+Tomorrow customers JSON: {}\n\
+Risks JSON: {}\n\
+Checklist JSON: {}\n",
+        facts,
+        serde_json::to_string(tomorrow_list).unwrap_or_default(),
+        serde_json::to_string(risks).unwrap_or_default(),
+        serde_json::to_string(checklist).unwrap_or_default()
+    );
+
+    let messages = vec![
+        LlmMessage {
+            role: "system".to_string(),
+            content: "Return Markdown only.".to_string(),
+        },
+        LlmMessage {
+            role: "user".to_string(),
+            content: prompt,
+        },
+    ];
+
+    client
+        .chat(&messages)
+        .await
+        .map_err(|err| AgentError::Retryable(format!("llm error: {}", err)))
 }

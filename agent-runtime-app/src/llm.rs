@@ -167,7 +167,7 @@ If owner/due are not mentioned, omit those fields.\nMinutes:\n{}",
         );
         let body = json!({
             "model": self.config.model,
-            "max_tokens": 512,
+            "max_tokens": 64000,
             "system": "Return JSON only.",
             "messages": [
                 {"role": "user", "content": prompt}
@@ -205,7 +205,7 @@ If owner/due are not mentioned, omit those fields.\nMinutes:\n{}",
         let (system, claude_messages) = split_system_messages(messages);
         let body = json!({
             "model": self.config.model,
-            "max_tokens": 512,
+            "max_tokens": 64000,
             "system": system,
             "messages": claude_messages,
         });
