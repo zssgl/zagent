@@ -215,8 +215,8 @@ impl GenericWorkflowRunner {
             .map_err(|err| format!("read rules failed: {}", err))?;
         let rules: WorkflowRules = serde_yaml::from_str(&rules_content)
             .map_err(|err| format!("invalid rules: {}", err))?;
-        let name_static = Box::leak(spec.workflow_id.clone().into_boxed_str());
-        let version_static = if spec.version.is_empty() {
+        let name_static: &'static str = Box::leak(spec.workflow_id.clone().into_boxed_str());
+        let version_static: Option<&'static str> = if spec.version.is_empty() {
             None
         } else {
             Some(Box::leak(spec.version.clone().into_boxed_str()))

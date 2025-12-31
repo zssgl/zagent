@@ -17,8 +17,8 @@ async fn main() {
         "loreal-agent-app/workflows/meeting_prebrief_daily/v1.0.0/workflow.yml",
     )
     .expect("valid workflow spec");
-    let input_schema = read_json_schema(workflow_spec.input_schema_path());
-    let output_schema = read_json_schema(workflow_spec.output_schema_path());
+    let input_schema = read_json_schema(&workflow_spec.input_schema_path());
+    let output_schema = read_json_schema(&workflow_spec.output_schema_path());
     let workflow = GenericWorkflowRunner::from_spec(&workflow_spec).expect("load workflow");
 
     runtime
