@@ -1,0 +1,11 @@
+workflow_id: meeting_prebrief_daily
+version: v1.0.0
+status: active
+owner: Ops / Store Manager
+last_updated: 2025-12-30
+delivery_channel: wecom
+run_timezone: Asia/Shanghai
+spec: workflows/meeting_prebrief_daily/v1.0.0/spec.md
+input_schema: workflows/meeting_prebrief_daily/v1.0.0/input.schema.json
+output_schema: workflows/meeting_prebrief_daily/v1.0.0/output.schema.json
+thresholds: configs/meeting_prebrief_thresholds.yml

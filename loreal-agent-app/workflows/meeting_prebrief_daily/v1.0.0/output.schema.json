@@ -1,0 +1,146 @@
+{
+  "type": "object",
+  "properties": {
+    "run_id": { "type": "string" },
+    "biz_date": { "type": "string" },
+    "store_id": { "type": "string" },
+    "facts_recap": {
+      "type": "object",
+      "properties": {
+        "visits": { "type": "number" },
+        "gmv": { "type": "number" },
+        "consumption": { "type": "number" },
+        "mom_or_baseline": {
+          "type": "object",
+          "properties": {
+            "gmv_vs_7d": { "type": "number" }
+          },
+          "required": ["gmv_vs_7d"]
+        },
+        "target_progress": {
+          "type": "object",
+          "properties": {
+            "gmv_rate": { "type": "number" }
+          },
+          "required": ["gmv_rate"]
+        },
+        "structure": {
+          "type": "object",
+          "properties": {
+            "new": { "type": "number" },
+            "old": { "type": "number" }
+          },
+          "required": ["new", "old"]
+        },
+        "top_items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": { "type": "string" },
+              "amount": { "type": "number" }
+            },
+            "required": ["item", "amount"]
+          }
+        }
+      },
+      "required": [
+        "visits",
+        "gmv",
+        "consumption",
+        "mom_or_baseline",
+        "target_progress",
+        "structure",
+        "top_items"
+      ]
+    },
+    "tomorrow_list": {
+      "type": "object",
+      "properties": {
+        "appointments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "customer_id": { "type": "string" },
+              "time": { "type": "string" },
+              "item": { "type": "string" },
+              "staff_id": { "type": "string" },
+              "priority": { "type": "number" }
+            },
+            "required": ["customer_id", "time", "item", "staff_id", "priority"]
+          }
+        },
+        "followups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "customer_id": { "type": "string" },
+              "last_touch_at": { "type": "string" },
+              "staff_id": { "type": "string" },
+              "priority": { "type": "number" }
+            },
+            "required": ["customer_id", "last_touch_at", "staff_id", "priority"]
+          }
+        }
+      },
+      "required": ["appointments", "followups"]
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "risk_id": { "type": "string" },
+          "type": { "type": "string" },
+          "threshold": { "type": "string" },
+          "evidence_fields": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "note": { "type": "string" }
+        },
+        "required": ["risk_id", "type", "threshold", "evidence_fields", "note"]
+      }
+    },
+    "checklist": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item_id": { "type": "string" },
+          "owner_role": { "type": "string" },
+          "action": { "type": "string" },
+          "due": { "type": "string" },
+          "evidence_ref": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["item_id", "owner_role", "action", "due", "evidence_ref"]
+      }
+    },
+    "data_quality": {
+      "type": "object",
+      "properties": {
+        "wecom_touch_complete": { "type": "boolean" },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["wecom_touch_complete", "notes"]
+    }
+  },
+  "required": [
+    "run_id",
+    "biz_date",
+    "store_id",
+    "facts_recap",
+    "tomorrow_list",
+    "risks",
+    "checklist",
+    "data_quality"
+  ]
+}

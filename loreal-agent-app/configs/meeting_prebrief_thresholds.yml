@@ -1,0 +1,7 @@
+metric_drop_ratio: 0.8
+# gmv_rate must be >= this ratio to avoid target_gap.
+target_gap_rate: 0.7
+no_reply_list_min: 10
+no_reply_rate_max: 0.6
+# total appointments above this count trigger tomorrow_load.
+tomorrow_load_count: 20

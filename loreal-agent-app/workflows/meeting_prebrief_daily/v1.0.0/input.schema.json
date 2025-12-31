@@ -1,0 +1,99 @@
+{
+  "type": "object",
+  "properties": {
+    "store_id": { "type": "string" },
+    "biz_date": { "type": "string" },
+    "his": {
+      "type": "object",
+      "properties": {
+        "visits": { "type": "number" },
+        "gmv": { "type": "number" },
+        "consumption": { "type": "number" },
+        "avg_ticket": { "type": "number" },
+        "new_customers": { "type": "number" },
+        "old_customers": { "type": "number" },
+        "top_items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": { "type": "string" },
+              "amount": { "type": "number" }
+            },
+            "required": ["item", "amount"]
+          }
+        },
+        "targets": {
+          "type": "object",
+          "properties": {
+            "gmv_target": { "type": "number" },
+            "consumption_target": { "type": "number" }
+          }
+        }
+      },
+      "required": [
+        "visits",
+        "gmv",
+        "consumption",
+        "avg_ticket",
+        "new_customers",
+        "old_customers"
+      ]
+    },
+    "appointments_tomorrow": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "customer_id": { "type": "string" },
+          "time": { "type": "string" },
+          "item": { "type": "string" },
+          "staff_id": { "type": "string" },
+          "is_first_visit": { "type": "boolean" }
+        },
+        "required": ["customer_id", "time", "item", "staff_id"]
+      }
+    },
+    "wecom_touch": {
+      "type": "object",
+      "properties": {
+        "tasks_sent": { "type": "number" },
+        "contacted": { "type": "number" },
+        "replied": { "type": "number" },
+        "no_reply_list": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "customer_id": { "type": "string" },
+              "last_touch_at": { "type": "string" },
+              "staff_id": { "type": "string" }
+            },
+            "required": ["customer_id", "last_touch_at", "staff_id"]
+          }
+        }
+      }
+    },
+    "baselines": {
+      "type": "object",
+      "properties": {
+        "rolling_7d": {
+          "type": "object",
+          "properties": {
+            "visits_avg": { "type": "number" },
+            "gmv_avg": { "type": "number" },
+            "consumption_avg": { "type": "number" }
+          }
+        },
+        "rolling_28d": {
+          "type": "object",
+          "properties": {
+            "visits_avg": { "type": "number" },
+            "gmv_avg": { "type": "number" }
+          }
+        }
+      }
+    }
+  },
+  "required": ["store_id", "biz_date", "his"]
+}
