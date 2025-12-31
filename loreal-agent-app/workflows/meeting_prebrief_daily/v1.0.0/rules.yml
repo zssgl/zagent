@@ -1,0 +1,125 @@
+risks:
+  - id: metric_drop
+    type: metric_drop
+    threshold: "today < {metric_drop_ratio} * 7d_avg"
+    evidence_fields:
+      - his.gmv
+      - baselines.rolling_7d.gmv_avg
+    note_template: "GMV below 7d average by {delta_pct}%"
+    evaluator:
+      kind: metric_drop
+      metric: gmv
+      baseline: gmv_avg_7d
+      ratio_key: metric_drop_ratio
+
+  - id: target_gap
+    type: target_gap
+    threshold: "gmv_rate < {target_gap_rate}"
+    evidence_fields:
+      - his.gmv
+      - his.targets.gmv_target
+    note_template: "GMV progress at {rate_pct}%"
+    evaluator:
+      kind: target_gap
+      metric: gmv
+      target: target_gmv
+      rate_key: target_gap_rate
+
+  - id: touch_gap
+    type: touch_gap
+    threshold: "no_reply_list >= {no_reply_list_min} or no_reply_rate > {no_reply_rate_max}"
+    evidence_fields:
+      - wecom_touch.no_reply_list
+      - wecom_touch.contacted
+      - wecom_touch.replied
+    note_template: "WeCom follow-up backlog is high"
+    evaluator:
+      kind: touch_gap
+      no_reply_list_min_key: no_reply_list_min
+      no_reply_rate_max_key: no_reply_rate_max
+
+  - id: tomorrow_load
+    type: tomorrow_load
+    threshold: "appointments_count > {tomorrow_load_count}"
+    evidence_fields:
+      - appointments_tomorrow
+    note_template: "High appointment load: {appointments_count}"
+    evaluator:
+      kind: tomorrow_load
+      count_key: tomorrow_load_count
+
+checklist_templates:
+  - when_risk_types:
+      - metric_drop
+      - target_gap
+      - touch_gap
+      - tomorrow_load
+    owner_role: store_manager
+    action_template: "Review risk {risk_type}"
+    due_template: "{biz_date} 20:30"
+
+  - when_tomorrow_list: true
+    owner_role: store_manager
+    action_template: "Confirm tomorrow appointment staffing"
+    due_template: "{biz_date} 20:30"
+    evidence_ref:
+      - tomorrow_list:appointments
+
+  - fallback: true
+    owner_role: store_manager
+    action_template: "Prepare evening meeting highlights"
+    due_template: "{biz_date} 20:30"
+
+facts_recap:
+  fields:
+    - target_path: visits
+      source_path: his.visits
+    - target_path: gmv
+      source_path: his.gmv
+    - target_path: consumption
+      source_path: his.consumption
+    - target_path: mom_or_baseline.gmv_vs_7d
+      compute:
+        kind: ratio_delta
+        value_path: his.gmv
+        baseline_path: baselines.rolling_7d.gmv_avg
+    - target_path: target_progress.gmv_rate
+      compute:
+        kind: ratio
+        value_path: his.gmv
+        baseline_path: his.targets.gmv_target
+    - target_path: structure.new
+      source_path: his.new_customers
+    - target_path: structure.old
+      source_path: his.old_customers
+    - target_path: top_items
+      map_array:
+        source_path: his.top_items
+        fields:
+          item: item
+          amount: amount
+
+tomorrow_list:
+  appointments:
+    source_path: appointments_tomorrow
+    max_items: 20
+    fields:
+      customer_id: customer_id
+      time: time
+      item: item
+      staff_id: staff_id
+    priority:
+      kind: boolean_flag
+      source_field: is_first_visit
+      true_value: 1
+      false_value: 2
+  followups:
+    source_path: wecom_touch.no_reply_list
+    max_items: 20
+    fields:
+      customer_id: customer_id
+      last_touch_at: last_touch_at
+      staff_id: staff_id
+    priority:
+      kind: fixed
+      value: 2

@@ -3,30 +3,26 @@ use std::sync::Arc;
 
 use agent_runtime::runtime::InMemoryRuntime;
 use agent_runtime::server::router;
+use std::path::Path;
+
 use serde_json::Value;
 
 mod workflows;
-use workflows::MeetingPrebriefDailyWorkflow;
-
-const INPUT_SCHEMA: &str =
-    include_str!("../workflows/meeting_prebrief_daily/v1.0.0/input.schema.json");
-const OUTPUT_SCHEMA: &str =
-    include_str!("../workflows/meeting_prebrief_daily/v1.0.0/output.schema.json");
+use workflows::{GenericWorkflowRunner, WorkflowSpec};
 
 #[tokio::main]
 async fn main() {
     let runtime = Arc::new(InMemoryRuntime::new());
-    let input_schema: Value =
-        serde_json::from_str(INPUT_SCHEMA).expect("valid meeting_prebrief_daily input schema");
-    let output_schema: Value =
-        serde_json::from_str(OUTPUT_SCHEMA).expect("valid meeting_prebrief_daily output schema");
+    let workflow_spec = WorkflowSpec::load(
+        "loreal-agent-app/workflows/meeting_prebrief_daily/v1.0.0/workflow.yml",
+    )
+    .expect("valid workflow spec");
+    let input_schema = read_json_schema(workflow_spec.input_schema_path());
+    let output_schema = read_json_schema(workflow_spec.output_schema_path());
+    let workflow = GenericWorkflowRunner::from_spec(&workflow_spec).expect("load workflow");
 
     runtime
-        .register_workflow_with_schemas(
-            Arc::new(MeetingPrebriefDailyWorkflow),
-            Some(input_schema),
-            Some(output_schema),
-        )
+        .register_workflow_with_schemas(Arc::new(workflow), Some(input_schema), Some(output_schema))
         .await;
 
     let app = router(runtime);
@@ -37,4 +33,9 @@ async fn main() {
         .await
         .expect("bind");
     axum::serve(listener, app).await.expect("serve");
+}
+
+fn read_json_schema(path: &Path) -> Value {
+    let content = std::fs::read_to_string(path).expect("read schema");
+    serde_json::from_str(&content).expect("valid schema json")
 }

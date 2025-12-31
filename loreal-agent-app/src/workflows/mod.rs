@@ -1,3 +1,3 @@
-mod meeting_prebrief_daily;
+mod generic;
 
-pub use meeting_prebrief_daily::MeetingPrebriefDailyWorkflow;
+pub use generic::{GenericWorkflowRunner, WorkflowSpec};
