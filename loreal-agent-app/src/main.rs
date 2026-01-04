@@ -12,6 +12,7 @@ use workflows::{load_latest_active_spec_path, MeetingPrebriefDaily1_1Runner, Wor
 
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
     let runtime = Arc::new(InMemoryRuntime::new());
     let workflow_spec_path = load_latest_active_spec_path().expect("discover active workflow spec");
     let workflow_spec = WorkflowSpec::load(&workflow_spec_path).expect("valid workflow spec");
