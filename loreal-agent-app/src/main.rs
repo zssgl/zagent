@@ -14,7 +14,7 @@ use workflows::{GenericWorkflowRunner, WorkflowSpec};
 async fn main() {
     let runtime = Arc::new(InMemoryRuntime::new());
     let workflow_spec = WorkflowSpec::load(
-        "loreal-agent-app/workflows/meeting_prebrief_daily/v1.0.0/workflow.yml",
+        "loreal-agent-app/workflows/1-1_meeting_prebrief_daily/v2.0.0/workflow.yml",
     )
     .expect("valid workflow spec");
     let input_schema = read_json_schema(&workflow_spec.input_schema_path());

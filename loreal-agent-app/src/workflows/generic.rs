@@ -288,9 +288,28 @@ impl WorkflowRunner for GenericWorkflowRunner {
         };
 
         let metrics = Metrics {
+            visits: number_or_zero(get_value_at_path(&input, "his.visits")),
+            visits_avg_7d: number_or_zero(get_value_at_path(
+                &input,
+                "baselines.rolling_7d.visits_avg",
+            )),
             gmv: number_or_zero(get_value_at_path(&input, "his.gmv")),
             gmv_avg_7d: number_or_zero(get_value_at_path(&input, "baselines.rolling_7d.gmv_avg")),
+            consumption: number_or_zero(get_value_at_path(&input, "his.consumption")),
+            consumption_avg_7d: number_or_zero(get_value_at_path(
+                &input,
+                "baselines.rolling_7d.consumption_avg",
+            )),
+            avg_ticket: number_or_zero(get_value_at_path(&input, "his.avg_ticket")),
+            avg_ticket_avg_7d: number_or_zero(get_value_at_path(
+                &input,
+                "baselines.rolling_7d.avg_ticket_avg",
+            )),
             target_gmv: number_or_zero(get_value_at_path(&input, "his.targets.gmv_target")),
+            target_consumption: number_or_zero(get_value_at_path(
+                &input,
+                "his.targets.consumption_target",
+            )),
             appointments_count,
             no_reply_list_len,
             contacted,
@@ -390,7 +409,7 @@ impl WorkflowRunner for GenericWorkflowRunner {
             data_quality_notes.push("wecom_touch missing".to_string());
         }
 
-        let output = json!({
+        let mut output = json!({
             "run_id": format!("run_{}", Uuid::new_v4()),
             "biz_date": biz_date,
             "store_id": store_id,
@@ -403,6 +422,11 @@ impl WorkflowRunner for GenericWorkflowRunner {
                 "notes": data_quality_notes
             }
         });
+        let report_md =
+            render_prebrief_report_md(&input, &output, appointments_count, &risks, &checklist);
+        if let Value::Object(map) = &mut output {
+            map.insert("report_md".to_string(), Value::String(report_md));
+        }
 
         Ok(WorkflowOutput {
             output,
@@ -590,9 +614,16 @@ fn push_risk(
 }
 
 struct Metrics {
+    visits: f64,
+    visits_avg_7d: f64,
     gmv: f64,
     gmv_avg_7d: f64,
+    consumption: f64,
+    consumption_avg_7d: f64,
+    avg_ticket: f64,
+    avg_ticket_avg_7d: f64,
     target_gmv: f64,
+    target_consumption: f64,
     appointments_count: usize,
     no_reply_list_len: usize,
     contacted: f64,
@@ -602,14 +633,181 @@ struct Metrics {
 impl Metrics {
     fn value(&self, key: &str) -> Option<f64> {
         match key {
+            "visits" => Some(self.visits),
+            "visits_avg_7d" => Some(self.visits_avg_7d),
             "gmv" => Some(self.gmv),
             "gmv_avg_7d" => Some(self.gmv_avg_7d),
+            "consumption" => Some(self.consumption),
+            "consumption_avg_7d" => Some(self.consumption_avg_7d),
+            "avg_ticket" => Some(self.avg_ticket),
+            "avg_ticket_avg_7d" => Some(self.avg_ticket_avg_7d),
             "target_gmv" => Some(self.target_gmv),
+            "target_consumption" => Some(self.target_consumption),
             "contacted" => Some(self.contacted),
             "replied" => Some(self.replied),
             _ => None,
         }
     }
+}
+
+fn format_int_like(value: f64) -> String {
+    if value.is_finite() {
+        format!("{:.0}", value)
+    } else {
+        "0".to_string()
+    }
+}
+
+fn format_currency(value: f64) -> String {
+    format!("￥{}", format_int_like(value))
+}
+
+fn format_pct_ratio(value: f64) -> String {
+    if value.is_finite() {
+        format!("{:.0}%", value * 100.0)
+    } else {
+        "0%".to_string()
+    }
+}
+
+fn format_pct_delta(value: f64) -> String {
+    if !value.is_finite() {
+        return "0%".to_string();
+    }
+    let pct = value * 100.0;
+    if pct >= 0.0 {
+        format!("+{:.0}%", pct)
+    } else {
+        format!("{:.0}%", pct)
+    }
+}
+
+fn render_prebrief_report_md(
+    input: &Value,
+    output: &Value,
+    appointments_count: usize,
+    risks: &[Value],
+    checklist: &[Value],
+) -> String {
+    let biz_date = output
+        .get("biz_date")
+        .and_then(|v| v.as_str())
+        .unwrap_or("1970-01-01");
+    let store_id = output
+        .get("store_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let store_name = input
+        .get("store_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or(store_id);
+    let cutoff = input
+        .get("data_cutoff_time")
+        .and_then(|v| v.as_str())
+        .unwrap_or("未提供");
+
+    let facts = output.get("facts_recap").unwrap_or(&Value::Null);
+    let visits = number_or_zero(get_value_at_path(facts, "today.visits"));
+    let gmv = number_or_zero(get_value_at_path(facts, "today.gmv"));
+    let consumption = number_or_zero(get_value_at_path(facts, "today.consumption"));
+    let avg_ticket = number_or_zero(get_value_at_path(facts, "today.avg_ticket"));
+    let gmv_vs_7d = number_or_zero(get_value_at_path(facts, "today.vs_7d.gmv_delta"));
+    let consumption_vs_7d =
+        number_or_zero(get_value_at_path(facts, "today.vs_7d.consumption_delta"));
+    let gmv_rate = number_or_zero(get_value_at_path(facts, "mtd.gmv_rate"));
+    let consumption_rate = number_or_zero(get_value_at_path(facts, "mtd.consumption_rate"));
+
+    let mut lines = Vec::new();
+    lines.push(format!("日期：{}", biz_date));
+    lines.push(format!("数据截止时间：{}", cutoff));
+    lines.push(format!("门店：{}", store_name));
+    lines.push(String::new());
+
+    lines.push("## 今日经营摘要".to_string());
+    lines.push(format!(
+        "- 今日开单：{}（{} vs 7D均值）",
+        format_currency(gmv),
+        format_pct_delta(gmv_vs_7d)
+    ));
+    lines.push(format!(
+        "- 今日消耗：{}（{} vs 7D均值）",
+        format_currency(consumption),
+        format_pct_delta(consumption_vs_7d)
+    ));
+    lines.push(format!(
+        "- 今日到店人数：{}；今日客单价：{}",
+        format_int_like(visits),
+        format_currency(avg_ticket)
+    ));
+    if gmv_rate > 0.0 || consumption_rate > 0.0 {
+        lines.push(format!(
+            "- 月度指标完成度：开单 {}；消耗 {}",
+            format_pct_ratio(gmv_rate),
+            format_pct_ratio(consumption_rate)
+        ));
+    }
+    lines.push(String::new());
+
+    lines.push("## 核心风险提示".to_string());
+    if risks.is_empty() {
+        lines.push("- 无明显风险（按当前规则）".to_string());
+    } else {
+        for risk in risks.iter().take(6) {
+            let note = risk.get("note").and_then(|v| v.as_str()).unwrap_or("");
+            let risk_type = risk.get("type").and_then(|v| v.as_str()).unwrap_or("risk");
+            if note.is_empty() {
+                lines.push(format!("- {}", risk_type));
+            } else {
+                lines.push(format!("- {}：{}", risk_type, note));
+            }
+        }
+    }
+    lines.push(String::new());
+
+    lines.push("## 明日生意准备".to_string());
+    lines.push(format!("- 明日预约人数：{}", appointments_count));
+    let appts = output
+        .get("tomorrow_list")
+        .and_then(|v| v.get("appointments"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if appts.is_empty() {
+        lines.push("- 明日预约清单：数据未同步/为空".to_string());
+    } else {
+        lines.push("- 明日预约清单（Top10）：".to_string());
+        for (idx, item) in appts.iter().take(10).enumerate() {
+            let time = item.get("time").and_then(|v| v.as_str()).unwrap_or("-");
+            let customer_id = item
+                .get("customer_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("-");
+            let appt_item = item.get("item").and_then(|v| v.as_str()).unwrap_or("-");
+            lines.push(format!("  {}. {} {} {}", idx + 1, time, customer_id, appt_item));
+        }
+    }
+    lines.push(String::new());
+
+    lines.push("## 任务执行情况（自动生成清单）".to_string());
+    if checklist.is_empty() {
+        lines.push("- 清单为空（需要检查 rules.yml）".to_string());
+    } else {
+        for item in checklist.iter().take(10) {
+            let owner = item
+                .get("owner_role")
+                .and_then(|v| v.as_str())
+                .unwrap_or("owner");
+            let action = item.get("action").and_then(|v| v.as_str()).unwrap_or("");
+            let due = item.get("due").and_then(|v| v.as_str()).unwrap_or("");
+            if due.is_empty() {
+                lines.push(format!("- [{}] {}", owner, action));
+            } else {
+                lines.push(format!("- [{}] {}（截止 {}）", owner, action, due));
+            }
+        }
+    }
+
+    lines.join("\n")
 }
 
 fn render_template(template: &str, replacements: &[(String, String)]) -> String {

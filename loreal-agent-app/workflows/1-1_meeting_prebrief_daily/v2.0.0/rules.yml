@@ -1,0 +1,260 @@
+risks:
+  - id: gmv_drop
+    type: gmv_drop
+    threshold: "his.gmv < {metric_drop_ratio} * baselines.rolling_7d.gmv_avg"
+    evidence_fields:
+      - his.gmv
+      - baselines.rolling_7d.gmv_avg
+    note_template: "今日开单低于7日均值 {delta_pct}%"
+    evaluator:
+      kind: metric_drop
+      metric: gmv
+      baseline: gmv_avg_7d
+      ratio_key: metric_drop_ratio
+
+  - id: consumption_drop
+    type: consumption_drop
+    threshold: "his.consumption < {metric_drop_ratio} * baselines.rolling_7d.consumption_avg"
+    evidence_fields:
+      - his.consumption
+      - baselines.rolling_7d.consumption_avg
+    note_template: "今日消耗低于7日均值 {delta_pct}%"
+    evaluator:
+      kind: metric_drop
+      metric: consumption
+      baseline: consumption_avg_7d
+      ratio_key: metric_drop_ratio
+
+  - id: visits_drop
+    type: visits_drop
+    threshold: "his.visits < {metric_drop_ratio} * baselines.rolling_7d.visits_avg"
+    evidence_fields:
+      - his.visits
+      - baselines.rolling_7d.visits_avg
+    note_template: "今日到店人数低于7日均值 {delta_pct}%"
+    evaluator:
+      kind: metric_drop
+      metric: visits
+      baseline: visits_avg_7d
+      ratio_key: metric_drop_ratio
+
+  - id: avg_ticket_drop
+    type: avg_ticket_drop
+    threshold: "his.avg_ticket < {metric_drop_ratio} * baselines.rolling_7d.avg_ticket_avg"
+    evidence_fields:
+      - his.avg_ticket
+      - baselines.rolling_7d.avg_ticket_avg
+    note_template: "今日客单价低于7日均值 {delta_pct}%"
+    evaluator:
+      kind: metric_drop
+      metric: avg_ticket
+      baseline: avg_ticket_avg_7d
+      ratio_key: metric_drop_ratio
+
+  - id: gmv_target_gap
+    type: gmv_target_gap
+    threshold: "his.gmv / his.targets.gmv_target < {target_gap_rate}"
+    evidence_fields:
+      - his.gmv
+      - his.targets.gmv_target
+    note_template: "开单指标完成度 {rate_pct}%"
+    evaluator:
+      kind: target_gap
+      metric: gmv
+      target: target_gmv
+      rate_key: target_gap_rate
+
+  - id: consumption_target_gap
+    type: consumption_target_gap
+    threshold: "his.consumption / his.targets.consumption_target < {target_gap_rate}"
+    evidence_fields:
+      - his.consumption
+      - his.targets.consumption_target
+    note_template: "消耗指标完成度 {rate_pct}%"
+    evaluator:
+      kind: target_gap
+      metric: consumption
+      target: target_consumption
+      rate_key: target_gap_rate
+
+  - id: touch_gap
+    type: touch_gap
+    threshold: "no_reply_list >= {no_reply_list_min} or no_reply_rate > {no_reply_rate_max}"
+    evidence_fields:
+      - wecom_touch.no_reply_list
+      - wecom_touch.contacted
+      - wecom_touch.replied
+    note_template: "企微触达未回积压较高"
+    evaluator:
+      kind: touch_gap
+      no_reply_list_min_key: no_reply_list_min
+      no_reply_rate_max_key: no_reply_rate_max
+
+  - id: tomorrow_load
+    type: tomorrow_load
+    threshold: "appointments_count > {tomorrow_load_count}"
+    evidence_fields:
+      - appointments_tomorrow
+    note_template: "明日预约量较高：{appointments_count}"
+    evaluator:
+      kind: tomorrow_load
+      count_key: tomorrow_load_count
+
+checklist_templates:
+  - when_risk_types:
+      - gmv_drop
+      - consumption_drop
+      - visits_drop
+      - avg_ticket_drop
+      - gmv_target_gap
+      - consumption_target_gap
+      - touch_gap
+      - tomorrow_load
+    owner_role: store_manager
+    action_template: "复盘风险：{risk_type}，确认当晚可落地动作（大客/邀约/承接/补齐漏项）"
+    due_template: "{biz_date} 20:30"
+
+  - when_tomorrow_list: true
+    owner_role: store_manager
+    action_template: "确认明日预约承接与排班（{appointments_count}人）"
+    due_template: "{biz_date} 20:30"
+    evidence_ref:
+      - tomorrow_list:appointments
+
+  - fallback: true
+    owner_role: store_manager
+    action_template: "准备夕会 3 条重点（数据/风险/动作），并分配 owner"
+    due_template: "{biz_date} 20:30"
+
+facts_recap:
+  fields:
+    - target_path: today.visits
+      source_path: his.visits
+    - target_path: today.gmv
+      source_path: his.gmv
+    - target_path: today.consumption
+      source_path: his.consumption
+    - target_path: today.avg_ticket
+      source_path: his.avg_ticket
+    - target_path: today.structure.new_customers
+      source_path: his.new_customers
+    - target_path: today.structure.old_customers
+      source_path: his.old_customers
+    - target_path: today.vs_7d.gmv_delta
+      compute:
+        kind: ratio_delta
+        value_path: his.gmv
+        baseline_path: baselines.rolling_7d.gmv_avg
+    - target_path: today.vs_7d.consumption_delta
+      compute:
+        kind: ratio_delta
+        value_path: his.consumption
+        baseline_path: baselines.rolling_7d.consumption_avg
+    - target_path: today.vs_7d.visits_delta
+      compute:
+        kind: ratio_delta
+        value_path: his.visits
+        baseline_path: baselines.rolling_7d.visits_avg
+    - target_path: today.vs_7d.avg_ticket_delta
+      compute:
+        kind: ratio_delta
+        value_path: his.avg_ticket
+        baseline_path: baselines.rolling_7d.avg_ticket_avg
+    - target_path: today.top_items
+      map_array:
+        source_path: his.top_items
+        fields:
+          item: item
+          amount: amount
+    - target_path: mtd.gmv_mtd
+      source_path: mtd.gmv
+    - target_path: mtd.consumption_mtd
+      source_path: mtd.consumption
+    - target_path: mtd.time_progress
+      source_path: mtd.time_progress
+    - target_path: mtd.gmv_target
+      source_path: mtd.gmv_target
+    - target_path: mtd.consumption_target
+      source_path: mtd.consumption_target
+    - target_path: mtd.gmv_rate
+      compute:
+        kind: ratio
+        value_path: mtd.gmv
+        baseline_path: mtd.gmv_target
+    - target_path: mtd.consumption_rate
+      compute:
+        kind: ratio
+        value_path: mtd.consumption
+        baseline_path: mtd.consumption_target
+    - target_path: staff_stats
+      map_array:
+        source_path: staff_stats
+        fields:
+          staff_name: staff_name
+          today_gmv: today_gmv
+          today_consumption: today_consumption
+          mtd_gmv: mtd_gmv
+          mtd_consumption: mtd_consumption
+          r12_rate: r12_rate
+    - target_path: customer_summary.new.count
+      source_path: customer_summary.new.count
+    - target_path: customer_summary.new.gmv
+      source_path: customer_summary.new.gmv
+    - target_path: customer_summary.old.count
+      source_path: customer_summary.old.count
+    - target_path: customer_summary.old.gmv
+      source_path: customer_summary.old.gmv
+    - target_path: customer_summary.single_item_customers
+      source_path: customer_summary.single_item_customers
+    - target_path: customer_summary.vip_customers
+      source_path: customer_summary.vip_customers
+    - target_path: key_items_mtd
+      map_array:
+        source_path: key_items_mtd
+        fields:
+          item: item
+          gmv_mtd: gmv_mtd
+          consumption_mtd: consumption_mtd
+          wow_gmv: wow_gmv
+          wow_consumption: wow_consumption
+    - target_path: task_execution.followup_done_rate
+      source_path: task_execution.followup_done_rate
+    - target_path: task_execution.photo_sent_rate
+      source_path: task_execution.photo_sent_rate
+    - target_path: task_execution.postop_reminder_rate
+      source_path: task_execution.postop_reminder_rate
+    - target_path: task_execution.ai_record_rate
+      source_path: task_execution.ai_record_rate
+    - target_path: task_execution.emr_done_rate
+      source_path: task_execution.emr_done_rate
+    - target_path: task_execution.missing_photo_list
+      map_array:
+        source_path: task_execution.missing_photo_list
+        fields:
+          customer_id: customer_id
+          item: item
+
+tomorrow_list:
+  appointments:
+    source_path: appointments_tomorrow
+    max_items: 20
+    fields:
+      customer_id: customer_id
+      time: time
+      item: item
+      staff_id: staff_id
+    priority:
+      kind: boolean_flag
+      source_field: is_first_visit
+      true_value: 1
+      false_value: 2
+  followups:
+    source_path: wecom_touch.no_reply_list
+    max_items: 20
+    fields:
+      customer_id: customer_id
+      last_touch_at: last_touch_at
+      staff_id: staff_id
+    priority:
+      kind: fixed
+      value: 2

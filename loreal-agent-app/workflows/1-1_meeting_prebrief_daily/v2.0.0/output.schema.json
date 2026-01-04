@@ -1,0 +1,222 @@
+{
+  "type": "object",
+  "properties": {
+    "run_id": { "type": "string" },
+    "biz_date": { "type": "string" },
+    "store_id": { "type": "string" },
+    "report_md": { "type": "string" },
+    "facts_recap": {
+      "type": "object",
+      "properties": {
+        "today": {
+          "type": "object",
+          "properties": {
+            "visits": { "type": "number" },
+            "gmv": { "type": "number" },
+            "consumption": { "type": "number" },
+            "avg_ticket": { "type": "number" },
+            "structure": {
+              "type": "object",
+              "properties": {
+                "new_customers": { "type": "number" },
+                "old_customers": { "type": "number" }
+              }
+            },
+            "vs_7d": {
+              "type": "object",
+              "properties": {
+                "gmv_delta": { "type": "number" },
+                "consumption_delta": { "type": "number" },
+                "visits_delta": { "type": "number" },
+                "avg_ticket_delta": { "type": "number" }
+              }
+            },
+            "top_items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "item": { "type": "string" },
+                  "amount": { "type": "number" }
+                },
+                "required": ["item", "amount"]
+              }
+            }
+          }
+        },
+        "mtd": {
+          "type": "object",
+          "properties": {
+            "gmv_mtd": { "type": "number" },
+            "consumption_mtd": { "type": "number" },
+            "time_progress": { "type": "number" },
+            "gmv_target": { "type": "number" },
+            "consumption_target": { "type": "number" },
+            "gmv_rate": { "type": "number" },
+            "consumption_rate": { "type": "number" }
+          }
+        },
+        "staff_stats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "staff_name": { "type": "string" },
+              "today_gmv": { "type": "number" },
+              "today_consumption": { "type": "number" },
+              "mtd_gmv": { "type": "number" },
+              "mtd_consumption": { "type": "number" },
+              "r12_rate": { "type": "number" }
+            },
+            "required": ["staff_name"]
+          }
+        },
+        "customer_summary": {
+          "type": "object",
+          "properties": {
+            "new": {
+              "type": "object",
+              "properties": {
+                "count": { "type": "number" },
+                "gmv": { "type": "number" }
+              }
+            },
+            "old": {
+              "type": "object",
+              "properties": {
+                "count": { "type": "number" },
+                "gmv": { "type": "number" }
+              }
+            },
+            "single_item_customers": { "type": "number" },
+            "vip_customers": { "type": "number" }
+          }
+        },
+        "key_items_mtd": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": { "type": "string" },
+              "gmv_mtd": { "type": "number" },
+              "consumption_mtd": { "type": "number" },
+              "wow_gmv": { "type": "number" },
+              "wow_consumption": { "type": "number" }
+            },
+            "required": ["item"]
+          }
+        },
+        "task_execution": {
+          "type": "object",
+          "properties": {
+            "followup_done_rate": { "type": "number" },
+            "photo_sent_rate": { "type": "number" },
+            "postop_reminder_rate": { "type": "number" },
+            "ai_record_rate": { "type": "number" },
+            "emr_done_rate": { "type": "number" },
+            "missing_photo_list": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "customer_id": { "type": "string" },
+                  "item": { "type": "string" }
+                },
+                "required": ["customer_id"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "tomorrow_list": {
+      "type": "object",
+      "properties": {
+        "appointments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "customer_id": { "type": "string" },
+              "time": { "type": "string" },
+              "item": { "type": "string" },
+              "staff_id": { "type": "string" },
+              "priority": { "type": "number" }
+            },
+            "required": ["customer_id", "time", "item", "staff_id", "priority"]
+          }
+        },
+        "followups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "customer_id": { "type": "string" },
+              "last_touch_at": { "type": "string" },
+              "staff_id": { "type": "string" },
+              "priority": { "type": "number" }
+            },
+            "required": ["customer_id", "last_touch_at", "staff_id", "priority"]
+          }
+        }
+      },
+      "required": ["appointments", "followups"]
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "risk_id": { "type": "string" },
+          "type": { "type": "string" },
+          "threshold": { "type": "string" },
+          "evidence_fields": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "note": { "type": "string" }
+        },
+        "required": ["risk_id", "type", "threshold", "evidence_fields", "note"]
+      }
+    },
+    "checklist": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item_id": { "type": "string" },
+          "owner_role": { "type": "string" },
+          "action": { "type": "string" },
+          "due": { "type": "string" },
+          "evidence_ref": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["item_id", "owner_role", "action", "due", "evidence_ref"]
+      }
+    },
+    "data_quality": {
+      "type": "object",
+      "properties": {
+        "wecom_touch_complete": { "type": "boolean" },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["wecom_touch_complete", "notes"]
+    }
+  },
+  "required": [
+    "run_id",
+    "biz_date",
+    "store_id",
+    "report_md",
+    "facts_recap",
+    "tomorrow_list",
+    "risks",
+    "checklist",
+    "data_quality"
+  ]
+}

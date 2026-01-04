@@ -18,7 +18,7 @@ Each workflow version is isolated under `workflows/<workflow_id>/vX.Y.Z/`. Updat
 
 ## Current workflows
 
-- `meeting_prebrief_daily` (v1.0.0): daily pre-brief for store managers before the evening meeting.
+- `meeting_prebrief_daily` (v2.0.0): daily pre-brief for store managers before the evening meeting (aligned to the 夕会前简报模板).
 
 ## Editing tips
 
