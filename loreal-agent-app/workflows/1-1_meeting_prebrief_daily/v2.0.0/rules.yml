@@ -53,28 +53,28 @@ risks:
 
   - id: gmv_target_gap
     type: gmv_target_gap
-    threshold: "his.gmv / his.targets.gmv_target < {target_gap_rate}"
+    threshold: "mtd.gmv / mtd.gmv_target < {target_gap_rate}"
     evidence_fields:
-      - his.gmv
-      - his.targets.gmv_target
+      - mtd.gmv
+      - mtd.gmv_target
     note_template: "开单指标完成度 {rate_pct}%"
     evaluator:
       kind: target_gap
-      metric: gmv
-      target: target_gmv
+      metric: mtd_gmv
+      target: mtd_gmv_target
       rate_key: target_gap_rate
 
   - id: consumption_target_gap
     type: consumption_target_gap
-    threshold: "his.consumption / his.targets.consumption_target < {target_gap_rate}"
+    threshold: "mtd.consumption / mtd.consumption_target < {target_gap_rate}"
     evidence_fields:
-      - his.consumption
-      - his.targets.consumption_target
+      - mtd.consumption
+      - mtd.consumption_target
     note_template: "消耗指标完成度 {rate_pct}%"
     evaluator:
       kind: target_gap
-      metric: consumption
-      target: target_consumption
+      metric: mtd_consumption
+      target: mtd_consumption_target
       rate_key: target_gap_rate
 
   - id: touch_gap

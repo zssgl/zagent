@@ -305,6 +305,11 @@ impl WorkflowRunner for GenericWorkflowRunner {
                 &input,
                 "baselines.rolling_7d.avg_ticket_avg",
             )),
+            mtd_gmv: number_or_zero(get_value_at_path(&input, "mtd.gmv")),
+            mtd_consumption: number_or_zero(get_value_at_path(&input, "mtd.consumption")),
+            mtd_gmv_target: number_or_zero(get_value_at_path(&input, "mtd.gmv_target")),
+            mtd_consumption_target: number_or_zero(get_value_at_path(&input, "mtd.consumption_target")),
+            mtd_time_progress: number_or_zero(get_value_at_path(&input, "mtd.time_progress")),
             target_gmv: number_or_zero(get_value_at_path(&input, "his.targets.gmv_target")),
             target_consumption: number_or_zero(get_value_at_path(
                 &input,
@@ -622,6 +627,11 @@ struct Metrics {
     consumption_avg_7d: f64,
     avg_ticket: f64,
     avg_ticket_avg_7d: f64,
+    mtd_gmv: f64,
+    mtd_consumption: f64,
+    mtd_gmv_target: f64,
+    mtd_consumption_target: f64,
+    mtd_time_progress: f64,
     target_gmv: f64,
     target_consumption: f64,
     appointments_count: usize,
@@ -641,6 +651,11 @@ impl Metrics {
             "consumption_avg_7d" => Some(self.consumption_avg_7d),
             "avg_ticket" => Some(self.avg_ticket),
             "avg_ticket_avg_7d" => Some(self.avg_ticket_avg_7d),
+            "mtd_gmv" => Some(self.mtd_gmv),
+            "mtd_consumption" => Some(self.mtd_consumption),
+            "mtd_gmv_target" => Some(self.mtd_gmv_target),
+            "mtd_consumption_target" => Some(self.mtd_consumption_target),
+            "mtd_time_progress" => Some(self.mtd_time_progress),
             "target_gmv" => Some(self.target_gmv),
             "target_consumption" => Some(self.target_consumption),
             "contacted" => Some(self.contacted),
@@ -714,8 +729,56 @@ fn render_prebrief_report_md(
     let gmv_vs_7d = number_or_zero(get_value_at_path(facts, "today.vs_7d.gmv_delta"));
     let consumption_vs_7d =
         number_or_zero(get_value_at_path(facts, "today.vs_7d.consumption_delta"));
+    let visits_vs_7d = number_or_zero(get_value_at_path(facts, "today.vs_7d.visits_delta"));
+    let avg_ticket_vs_7d = number_or_zero(get_value_at_path(facts, "today.vs_7d.avg_ticket_delta"));
     let gmv_rate = number_or_zero(get_value_at_path(facts, "mtd.gmv_rate"));
     let consumption_rate = number_or_zero(get_value_at_path(facts, "mtd.consumption_rate"));
+    let time_progress = number_or_zero(get_value_at_path(facts, "mtd.time_progress"));
+
+    let risk_label = |risk_type: &str| -> std::borrow::Cow<'static, str> {
+        match risk_type {
+            "gmv_drop" => std::borrow::Cow::Borrowed("开单下滑"),
+            "consumption_drop" => std::borrow::Cow::Borrowed("消耗下滑"),
+            "visits_drop" => std::borrow::Cow::Borrowed("到店下滑"),
+            "avg_ticket_drop" => std::borrow::Cow::Borrowed("客单下滑"),
+            "gmv_target_gap" => std::borrow::Cow::Borrowed("开单进度落后"),
+            "consumption_target_gap" => std::borrow::Cow::Borrowed("消耗进度落后"),
+            "touch_gap" => std::borrow::Cow::Borrowed("触达未回积压"),
+            "tomorrow_load" => std::borrow::Cow::Borrowed("明日承接压力"),
+            _ => std::borrow::Cow::Owned(risk_type.to_string()),
+        }
+    };
+
+    let mut smart_summary = Vec::new();
+    if time_progress > 0.0 && (gmv_rate > 0.0 || consumption_rate > 0.0) {
+        let gap_gmv = gmv_rate - time_progress;
+        let gap_cons = consumption_rate - time_progress;
+        let gap_threshold = 0.05;
+        if gap_gmv < -gap_threshold {
+            smart_summary.push("开单完成进度落后于时间进度，需重点盯当晚可落地的补缺动作".to_string());
+        }
+        if gap_cons < -gap_threshold {
+            smart_summary.push("消耗完成进度落后于时间进度，关注明日承接与当日消耗转化".to_string());
+        }
+        if gap_gmv > gap_threshold {
+            smart_summary.push("开单进度领先于时间进度，继续稳态推进并关注结构质量".to_string());
+        }
+        if gap_cons > gap_threshold {
+            smart_summary.push("消耗进度领先于时间进度，注意保持预约承接与交付效率".to_string());
+        }
+    }
+    if avg_ticket_vs_7d <= -0.1 {
+        smart_summary.push("客单价低于近7日平均，关注升单/组合项目与高客单顾客推进".to_string());
+    }
+    if visits_vs_7d <= -0.1 {
+        smart_summary.push("到店人数低于近7日平均，关注明日预约承接与当晚邀约补量".to_string());
+    }
+    if risks.iter().any(|r| r.get("type").and_then(|v| v.as_str()) == Some("touch_gap")) {
+        smart_summary.push("触达未回积压偏高，建议在夕会明确二触达 owner 与截止时间".to_string());
+    }
+    if smart_summary.is_empty() && !risks.is_empty() {
+        smart_summary.push("风险已触发但缺少关键上下文，建议夕会补齐原因验证与行动分工".to_string());
+    }
 
     let mut lines = Vec::new();
     lines.push(format!("日期：{}", biz_date));
@@ -746,6 +809,13 @@ fn render_prebrief_report_md(
             format_pct_ratio(consumption_rate)
         ));
     }
+    if !smart_summary.is_empty() {
+        lines.push(String::new());
+        lines.push("<font color=\"RED\">智能总结</font>".to_string());
+        for item in smart_summary.iter().take(4) {
+            lines.push(item.to_string());
+        }
+    }
     lines.push(String::new());
 
     lines.push("## 核心风险提示".to_string());
@@ -756,9 +826,9 @@ fn render_prebrief_report_md(
             let note = risk.get("note").and_then(|v| v.as_str()).unwrap_or("");
             let risk_type = risk.get("type").and_then(|v| v.as_str()).unwrap_or("risk");
             if note.is_empty() {
-                lines.push(format!("- {}", risk_type));
+                lines.push(format!("- {}", risk_label(risk_type)));
             } else {
-                lines.push(format!("- {}：{}", risk_type, note));
+                lines.push(format!("- {}：{}", risk_label(risk_type), note));
             }
         }
     }
