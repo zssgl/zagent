@@ -8,18 +8,16 @@ use std::path::Path;
 use serde_json::Value;
 
 mod workflows;
-use workflows::{GenericWorkflowRunner, WorkflowSpec};
+use workflows::{load_latest_active_spec_path, MeetingPrebriefDaily1_1Runner, WorkflowSpec};
 
 #[tokio::main]
 async fn main() {
     let runtime = Arc::new(InMemoryRuntime::new());
-    let workflow_spec = WorkflowSpec::load(
-        "loreal-agent-app/workflows/1-1_meeting_prebrief_daily/v2.0.0/workflow.yml",
-    )
-    .expect("valid workflow spec");
+    let workflow_spec_path = load_latest_active_spec_path().expect("discover active workflow spec");
+    let workflow_spec = WorkflowSpec::load(&workflow_spec_path).expect("valid workflow spec");
     let input_schema = read_json_schema(&workflow_spec.input_schema_path());
     let output_schema = read_json_schema(&workflow_spec.output_schema_path());
-    let workflow = GenericWorkflowRunner::from_spec(&workflow_spec).expect("load workflow");
+    let workflow = MeetingPrebriefDaily1_1Runner::from_spec(&workflow_spec).expect("load workflow");
 
     runtime
         .register_workflow_with_schemas(Arc::new(workflow), Some(input_schema), Some(output_schema))
