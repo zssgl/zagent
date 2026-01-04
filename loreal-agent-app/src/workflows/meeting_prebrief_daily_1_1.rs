@@ -200,6 +200,9 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
             merge_json(&mut merged, &input);
             input = merged;
         }
+        if let Value::Object(map) = &mut input {
+            map.remove("__context");
+        }
 
         let store_id = input
             .get("store_id")
@@ -829,6 +832,12 @@ fn render_report_md(input: &Value, output: &Value) -> String {
     if visits_vs_7d <= -0.1 {
         smart_summary.push("到店人数低于近7日平均，关注明日预约承接与当晚邀约补量".to_string());
     }
+    if gmv_vs_7d >= 0.5 {
+        smart_summary.push("今日开单显著高于近7日平均，关注大客/大单结构与交付承接".to_string());
+    }
+    if consumption_vs_7d >= 0.5 {
+        smart_summary.push("今日消耗显著高于近7日平均，关注疗程交付与复购承接".to_string());
+    }
     if risks.iter().any(|r| r.get("type").and_then(|v| v.as_str()) == Some("touch_gap")) {
         smart_summary.push("触达未回积压偏高，建议在夕会明确二触达 owner 与截止时间".to_string());
     }
@@ -971,24 +980,12 @@ fn render_report_md(input: &Value, output: &Value) -> String {
         let postop = number_or_zero(get_value_at_path(&task_execution, "postop_reminder_rate"));
         let ai_record = number_or_zero(get_value_at_path(&task_execution, "ai_record_rate"));
         let emr = number_or_zero(get_value_at_path(&task_execution, "emr_done_rate"));
-        if followup > 0.0 {
-            lines.push(format!("- 回访完成率：{}", format_pct_ratio(followup)));
-        }
-        if photo > 0.0 {
-            lines.push(format!("- 对比照发送完成率：{}", format_pct_ratio(photo)));
-        }
-        if postop > 0.0 {
-            lines.push(format!("- 术后提醒发送完成率：{}", format_pct_ratio(postop)));
-        }
-        if ai_record > 0.0 {
-            lines.push(format!("- AI面诊记录生成率：{}", format_pct_ratio(ai_record)));
-        }
-        if emr > 0.0 {
-            lines.push(format!("- 病历完成比例：{}", format_pct_ratio(emr)));
-        }
-        if followup == 0.0 && photo == 0.0 && postop == 0.0 && ai_record == 0.0 && emr == 0.0 {
-            lines.push("- 数据未提供".to_string());
-        }
+        // If task_execution is provided, always print the KPIs (0% is still meaningful).
+        lines.push(format!("- 回访完成率：{}", format_pct_ratio(followup)));
+        lines.push(format!("- 对比照发送完成率：{}", format_pct_ratio(photo)));
+        lines.push(format!("- 术后提醒发送完成率：{}", format_pct_ratio(postop)));
+        lines.push(format!("- AI面诊记录生成率：{}", format_pct_ratio(ai_record)));
+        lines.push(format!("- 病历完成比例：{}", format_pct_ratio(emr)));
     }
     lines.push(String::new());
 

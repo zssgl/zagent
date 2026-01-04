@@ -51,3 +51,12 @@ You can also send a single `POST /v1/runs` request with minimal input, and let t
 If `context.assemble.source=mysql` is set, the app uses `DATABASE_URL` to fill `his` + `appointments_tomorrow` best-effort, then merges your provided `input` as overrides.
 
 Under the hood, the workflow runner calls a MySQL tool (managed by a shared ToolManager) when `context.assemble.source=mysql` is present.
+
+Current MySQL assembly coverage:
+
+- `his` (gmv/visits/avg_ticket/top_items)
+- `appointments_tomorrow`
+- `staff_stats` (best-effort via `bills` + `billemployees`)
+- `customer_summary` (new vs old via first bill date in this clinic)
+- `key_items_mtd` (best-effort via `billoperationrecorditems`)
+- `task_execution` (photo/emr/prescription/followup rates best-effort)
