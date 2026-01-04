@@ -7,10 +7,10 @@ use std::path::Path;
 use serde_json::Value;
 use sqlx::MySqlPool;
 
-mod workflows;
-mod assemble;
-mod server;
-use workflows::{load_latest_active_spec_path, MeetingPrebriefDaily1_1Runner, WorkflowSpec};
+use loreal_agent_app::tools::ToolManager;
+use loreal_agent_app::workflows::{
+    load_latest_active_spec_path, MeetingPrebriefDaily1_1Runner, WorkflowSpec,
+};
 
 #[tokio::main]
 async fn main() {
@@ -20,12 +20,6 @@ async fn main() {
     let workflow_spec = WorkflowSpec::load(&workflow_spec_path).expect("valid workflow spec");
     let input_schema = read_json_schema(&workflow_spec.input_schema_path());
     let output_schema = read_json_schema(&workflow_spec.output_schema_path());
-    let workflow = MeetingPrebriefDaily1_1Runner::from_spec(&workflow_spec).expect("load workflow");
-
-    runtime
-        .register_workflow_with_schemas(Arc::new(workflow), Some(input_schema), Some(output_schema))
-        .await;
-
     let mysql = match std::env::var("DATABASE_URL") {
         Ok(url) if !url.trim().is_empty() => match MySqlPool::connect(&url).await {
             Ok(pool) => Some(pool),
@@ -36,8 +30,15 @@ async fn main() {
         },
         _ => None,
     };
+    let tools = std::sync::Arc::new(ToolManager::new(mysql));
+    let workflow =
+        MeetingPrebriefDaily1_1Runner::from_spec(&workflow_spec, tools).expect("load workflow");
 
-    let app = server::router(runtime, mysql);
+    runtime
+        .register_workflow_with_schemas(Arc::new(workflow), Some(input_schema), Some(output_schema))
+        .await;
+
+    let app = loreal_agent_app::server::router(runtime);
     let addr: SocketAddr = "127.0.0.1:9010".parse().expect("valid addr");
     println!("loreal agent app listening on {}", addr);
 

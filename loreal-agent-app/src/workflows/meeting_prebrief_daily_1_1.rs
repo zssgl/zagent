@@ -7,6 +7,9 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use super::spec::WorkflowSpec;
+use crate::tools::{
+    assemble_meeting_prebrief_daily_1_1_mysql, merge_json, MysqlAssembleError, SharedTools,
+};
 
 const MAX_LIST_ITEMS: usize = 20;
 const MIN_CHECKLIST_ITEMS: usize = 3;
@@ -136,10 +139,11 @@ pub struct MeetingPrebriefDaily1_1Runner {
     version: String,
     thresholds: ThresholdMap,
     rules: WorkflowRules,
+    tools: SharedTools,
 }
 
 impl MeetingPrebriefDaily1_1Runner {
-    pub fn from_spec(spec: &WorkflowSpec) -> Result<Self, String> {
+    pub fn from_spec(spec: &WorkflowSpec, tools: SharedTools) -> Result<Self, String> {
         let rules_path = spec
             .rules_path()
             .ok_or_else(|| "workflow spec missing rules".to_string())?;
@@ -161,6 +165,7 @@ impl MeetingPrebriefDaily1_1Runner {
             version: spec.version.clone(),
             thresholds: ThresholdMap(thresholds),
             rules,
+            tools,
         })
     }
 }
@@ -176,6 +181,26 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
     }
 
     async fn run(&self, input: Value) -> Result<WorkflowOutput, AgentError> {
+        let mut input = input;
+
+        // Tool usage: allow server-side assembly from MySQL with a single request.
+        if wants_mysql_assembly(input.get("__context")) {
+            let Some(pool) = self.tools.mysql() else {
+                return Err(AgentError::Fatal(
+                    "mysql not configured (DATABASE_URL missing or connection failed)".to_string(),
+                ));
+            };
+            let assembled = assemble_meeting_prebrief_daily_1_1_mysql(pool, &input)
+                .await
+                .map_err(|err| match err {
+                    MysqlAssembleError::InvalidInput(message) => AgentError::Fatal(message),
+                    MysqlAssembleError::Db(message) => AgentError::Retryable(message),
+                })?;
+            let mut merged = assembled;
+            merge_json(&mut merged, &input);
+            input = merged;
+        }
+
         let store_id = input
             .get("store_id")
             .and_then(|v| v.as_str())
@@ -292,6 +317,20 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
             output,
             artifacts: Vec::new(),
         })
+    }
+}
+
+fn wants_mysql_assembly(context: Option<&Value>) -> bool {
+    let Some(context) = context else {
+        return false;
+    };
+    match context.get("assemble") {
+        Some(Value::Bool(true)) => true,
+        Some(Value::Object(map)) => map
+            .get("source")
+            .and_then(|v| v.as_str())
+            .is_some_and(|v| v.eq_ignore_ascii_case("mysql")),
+        _ => false,
     }
 }
 
@@ -989,4 +1028,3 @@ pub fn load_latest_active_spec_path() -> Result<std::path::PathBuf, String> {
     let workflow_root = Path::new("loreal-agent-app/workflows/1-1_meeting_prebrief_daily");
     super::spec::discover_latest_active_version(workflow_root)
 }
-

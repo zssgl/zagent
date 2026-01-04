@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use sqlx::{MySqlPool, Row};
 
 #[derive(Debug, thiserror::Error)]
-pub enum AssembleError {
+pub enum MysqlAssembleError {
     #[error("invalid input: {0}")]
     InvalidInput(String),
     #[error("db error: {0}")]
@@ -16,50 +16,33 @@ fn parse_date(text: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(text, "%Y-%m-%d").ok()
 }
 
-fn string_field(input: &Value, path: &str) -> Option<String> {
-    input.get(path).and_then(|v| v.as_str()).map(|v| v.to_string())
-}
-
-pub fn merge_json(base: &mut Value, overlay: &Value) {
-    match (base, overlay) {
-        (Value::Object(base_map), Value::Object(overlay_map)) => {
-            for (k, v) in overlay_map {
-                match base_map.get_mut(k) {
-                    Some(existing) => merge_json(existing, v),
-                    None => {
-                        base_map.insert(k.clone(), v.clone());
-                    }
-                }
-            }
-        }
-        (base_slot, overlay_value) => {
-            *base_slot = overlay_value.clone();
-        }
-    }
+fn string_field(input: &Value, key: &str) -> Option<String> {
+    input.get(key).and_then(|v| v.as_str()).map(|v| v.to_string())
 }
 
 pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
     pool: &MySqlPool,
     minimal_input: &Value,
-) -> Result<Value, AssembleError> {
+) -> Result<Value, MysqlAssembleError> {
     let biz_date = string_field(minimal_input, "biz_date")
         .and_then(|v| parse_date(&v))
-        .ok_or_else(|| AssembleError::InvalidInput("missing/invalid biz_date (YYYY-MM-DD)".into()))?;
+        .ok_or_else(|| MysqlAssembleError::InvalidInput("missing/invalid biz_date (YYYY-MM-DD)".into()))?;
 
     let store_id = string_field(minimal_input, "store_id")
-        .ok_or_else(|| AssembleError::InvalidInput("missing store_id".into()))?;
+        .ok_or_else(|| MysqlAssembleError::InvalidInput("missing store_id".into()))?;
     let store_name = string_field(minimal_input, "store_name").unwrap_or_else(|| store_id.clone());
-    let cutoff_time = string_field(minimal_input, "data_cutoff_time").unwrap_or_else(|| "未提供".into());
+    let cutoff_time =
+        string_field(minimal_input, "data_cutoff_time").unwrap_or_else(|| "未提供".into());
 
     let start = biz_date
         .and_hms_opt(0, 0, 0)
-        .ok_or_else(|| AssembleError::InvalidInput("invalid biz_date".into()))?;
+        .ok_or_else(|| MysqlAssembleError::InvalidInput("invalid biz_date".into()))?;
     let end = start + Duration::days(1);
 
     let tomorrow = biz_date + Duration::days(1);
     let tomorrow_start = tomorrow
         .and_hms_opt(0, 0, 0)
-        .ok_or_else(|| AssembleError::InvalidInput("invalid biz_date".into()))?;
+        .ok_or_else(|| MysqlAssembleError::InvalidInput("invalid biz_date".into()))?;
     let tomorrow_end = tomorrow_start + Duration::days(1);
 
     // NOTE: Best-effort queries. Adjust store filters/field mapping once you confirm schema.
@@ -70,7 +53,7 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
     .bind(end)
     .fetch_one(pool)
     .await
-    .map_err(|err| AssembleError::Db(err.to_string()))?;
+    .map_err(|err| MysqlAssembleError::Db(err.to_string()))?;
 
     let payment_total: Decimal = sqlx::query_scalar(
         "SELECT COALESCE(SUM(p.Amount), 0) \
@@ -82,7 +65,7 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
     .bind(end)
     .fetch_one(pool)
     .await
-    .map_err(|err| AssembleError::Db(err.to_string()))?;
+    .map_err(|err| MysqlAssembleError::Db(err.to_string()))?;
     let payment_total = payment_total.to_f64().unwrap_or(0.0);
 
     let appointment_count: i64 = sqlx::query_scalar(
@@ -93,7 +76,7 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
     .bind(end)
     .fetch_one(pool)
     .await
-    .map_err(|err| AssembleError::Db(err.to_string()))?;
+    .map_err(|err| MysqlAssembleError::Db(err.to_string()))?;
 
     let appointment_rows = sqlx::query(
         "SELECT CustomerId, CustomerName, StartTime, DoctorName, ConsultantName \
@@ -105,7 +88,7 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
     .bind(tomorrow_end)
     .fetch_all(pool)
     .await
-    .map_err(|err| AssembleError::Db(err.to_string()))?;
+    .map_err(|err| MysqlAssembleError::Db(err.to_string()))?;
 
     let mut appointments_tomorrow = Vec::new();
     for row in appointment_rows {

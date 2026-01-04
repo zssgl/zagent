@@ -10,7 +10,6 @@ use axum::{
 use axum::response::sse::Event as SseEvent;
 use futures::StreamExt;
 use serde_json::Value;
-use sqlx::MySqlPool;
 use tokio_stream::wrappers::BroadcastStream;
 
 use agent_runtime::runtime::InMemoryRuntime;
@@ -19,16 +18,13 @@ use agent_runtime::types::{
     SchemaBundle, Workflow, WorkflowListResponse,
 };
 
-use crate::assemble::{assemble_meeting_prebrief_daily_1_1_mysql, merge_json, AssembleError};
-
 #[derive(Clone)]
 pub struct AppState {
     pub runtime: Arc<InMemoryRuntime>,
-    pub mysql: Option<MySqlPool>,
 }
 
-pub fn router(runtime: Arc<InMemoryRuntime>, mysql: Option<MySqlPool>) -> Router {
-    let state = AppState { runtime, mysql };
+pub fn router(runtime: Arc<InMemoryRuntime>) -> Router {
+    let state = AppState { runtime };
     Router::new()
         .route("/v1/runs", post(create_run))
         .route("/v1/runs/:run_id", get(get_run))
@@ -40,58 +36,15 @@ pub fn router(runtime: Arc<InMemoryRuntime>, mysql: Option<MySqlPool>) -> Router
         .with_state(state)
 }
 
-fn wants_mysql_assembly(context: Option<&Value>) -> bool {
-    let Some(context) = context else {
-        return false;
-    };
-    match context.get("assemble") {
-        Some(Value::Bool(true)) => true,
-        Some(Value::Object(map)) => map
-            .get("source")
-            .and_then(|v| v.as_str())
-            .is_some_and(|v| v.eq_ignore_ascii_case("mysql")),
-        _ => false,
-    }
-}
-
 async fn create_run(
     State(state): State<AppState>,
     Json(mut req): Json<RunCreateRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    if req.workflow.name == "meeting_prebrief_daily" && wants_mysql_assembly(req.context.as_ref()) {
-        let Some(pool) = &state.mysql else {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    code: "mysql_not_configured".to_string(),
-                    message: "DATABASE_URL is not set; cannot assemble input from MySQL".to_string(),
-                    retryable: false,
-                    details: None,
-                }),
-            ));
-        };
-
-        let assembled = assemble_meeting_prebrief_daily_1_1_mysql(pool, &req.input)
-            .await
-            .map_err(|err| {
-                let (code, retryable) = match &err {
-                    AssembleError::InvalidInput(_) => ("invalid_input", false),
-                    AssembleError::Db(_) => ("db_error", true),
-                };
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse {
-                        code: format!("assemble_mysql_{}", code),
-                        message: err.to_string(),
-                        retryable,
-                        details: None,
-                    }),
-                )
-            })?;
-
-        let mut merged = assembled;
-        merge_json(&mut merged, &req.input);
-        req.input = merged;
+    // Workflow runners only receive `input`, not `context`; forward it explicitly for tool usage.
+    if let Some(context) = &req.context {
+        if let Value::Object(map) = &mut req.input {
+            map.insert("__context".to_string(), context.clone());
+        }
     }
 
     let run = state

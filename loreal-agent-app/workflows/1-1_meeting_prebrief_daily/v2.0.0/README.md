@@ -45,4 +45,6 @@ You can also send a single `POST /v1/runs` request with minimal input, and let t
 }
 ```
 
-If `context.assemble.source=mysql` is set, the server reads `DATABASE_URL` and fills `his` + `appointments_tomorrow` best-effort, then merges your provided `input` as overrides.
+If `context.assemble.source=mysql` is set, the app uses `DATABASE_URL` to fill `his` + `appointments_tomorrow` best-effort, then merges your provided `input` as overrides.
+
+Under the hood, the workflow runner calls a MySQL tool (managed by a shared ToolManager) when `context.assemble.source=mysql` is present.
