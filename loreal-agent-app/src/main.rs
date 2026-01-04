@@ -2,12 +2,14 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use agent_runtime::runtime::InMemoryRuntime;
-use agent_runtime::server::router;
 use std::path::Path;
 
 use serde_json::Value;
+use sqlx::MySqlPool;
 
 mod workflows;
+mod assemble;
+mod server;
 use workflows::{load_latest_active_spec_path, MeetingPrebriefDaily1_1Runner, WorkflowSpec};
 
 #[tokio::main]
@@ -24,7 +26,18 @@ async fn main() {
         .register_workflow_with_schemas(Arc::new(workflow), Some(input_schema), Some(output_schema))
         .await;
 
-    let app = router(runtime);
+    let mysql = match std::env::var("DATABASE_URL") {
+        Ok(url) if !url.trim().is_empty() => match MySqlPool::connect(&url).await {
+            Ok(pool) => Some(pool),
+            Err(err) => {
+                eprintln!("MySQL disabled: connect failed: {}", err);
+                None
+            }
+        },
+        _ => None,
+    };
+
+    let app = server::router(runtime, mysql);
     let addr: SocketAddr = "127.0.0.1:9010".parse().expect("valid addr");
     println!("loreal agent app listening on {}", addr);
 

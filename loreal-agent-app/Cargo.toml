@@ -2,6 +2,7 @@
 name = "loreal-agent-app"
 version = "0.1.0"
 edition = "2024"
+default-run = "loreal-agent-app"
 
 [dependencies]
 agent_runtime = { path = ".." }
@@ -9,10 +10,13 @@ async-trait = "0.1"
 axum = { version = "0.7", features = ["json"] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
+futures = "0.3"
 rust_decimal = "1.36"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "mysql", "chrono", "rust_decimal"] }
+thiserror = "1.0"
 tokio = { version = "1.37", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
 uuid = { version = "1.8", features = ["v4", "serde"] }

@@ -27,3 +27,22 @@ This workflow expects a structured `input` JSON. For local testing, you can asse
 - `cargo run -p loreal-agent-app --bin assemble_meeting_prebrief_daily_1_1 -- --biz-date 2025-12-30 --store-id <store_id> --store-name <store_name> --cutoff-time 16:12`
 
 Then `POST /v1/runs` with the printed JSON as the `input`.
+
+### Single-request mode (recommended for POC)
+
+You can also send a single `POST /v1/runs` request with minimal input, and let the server assemble missing fields from MySQL:
+
+```json
+{
+  "workflow": { "name": "meeting_prebrief_daily" },
+  "context": { "assemble": { "source": "mysql" } },
+  "input": {
+    "store_id": "hz_xizi",
+    "store_name": "杭州西子诊所",
+    "biz_date": "2025-12-30",
+    "data_cutoff_time": "16:12"
+  }
+}
+```
+
+If `context.assemble.source=mysql` is set, the server reads `DATABASE_URL` and fills `his` + `appointments_tomorrow` best-effort, then merges your provided `input` as overrides.
