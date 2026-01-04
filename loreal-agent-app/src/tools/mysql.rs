@@ -139,7 +139,7 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
     }
 
     // ---------- Tomorrow appointments ----------
-    let _appointment_count: i64 = sqlx::query_scalar(
+    let today_appointments_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM appointments \
          WHERE OrginizationId = ? AND StartTime >= ? AND StartTime < ? AND IsDelete = 0",
     )
@@ -353,6 +353,8 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
     let staff_stats = staff_map
         .into_values()
         .map(|mut obj| {
+            obj.entry("today_gmv".to_string()).or_insert(json!(0.0));
+            obj.entry("mtd_gmv".to_string()).or_insert(json!(0.0));
             obj.entry("today_consumption".to_string())
                 .or_insert(json!(0.0));
             obj.entry("mtd_consumption".to_string())
@@ -403,11 +405,106 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
         }
     }
 
+    // New customer sources (best-effort).
+    let new_source_rows = sqlx::query(
+        "SELECT COALESCE(cd.DisplayName, '未知') AS source, COUNT(*) AS cnt, COALESCE(SUM(d.day_gmv), 0) AS gmv \
+         FROM ( \
+           SELECT Customer_ID, COALESCE(SUM(PayAmount), 0) AS day_gmv \
+           FROM bills \
+           WHERE ClinicId = ? AND CreateTime >= ? AND CreateTime < ? AND IsRefund = 0 \
+           GROUP BY Customer_ID \
+         ) d \
+         JOIN ( \
+           SELECT Customer_ID, MIN(CreateTime) AS first_time \
+           FROM bills \
+           WHERE ClinicId = ? AND IsRefund = 0 \
+           GROUP BY Customer_ID \
+         ) f ON f.Customer_ID = d.Customer_ID AND DATE(f.first_time) = ? \
+         JOIN customers c ON c.ID = d.Customer_ID \
+         LEFT JOIN customdictionary cd ON cd.ID = c.LaiYuanID \
+         GROUP BY COALESCE(cd.DisplayName, '未知') \
+         ORDER BY cnt DESC \
+         LIMIT 10",
+    )
+    .bind(&store_id)
+    .bind(start)
+    .bind(end)
+    .bind(&store_id)
+    .bind(biz_date)
+    .fetch_all(pool)
+    .await
+    .map_err(|err| MysqlAssembleError::Db(err.to_string()))?;
+    let mut new_sources = Vec::new();
+    for row in new_source_rows {
+        let source: Option<String> = row.try_get("source").ok().flatten();
+        let cnt: Option<i64> = row.try_get("cnt").ok().flatten();
+        let gmv: Option<Decimal> = row.try_get("gmv").ok().flatten();
+        new_sources.push(json!({
+            "source": source.unwrap_or_else(|| "未知".to_string()),
+            "count": (cnt.unwrap_or(0) as f64),
+            "gmv": gmv.and_then(|v| v.to_f64()).unwrap_or(0.0)
+        }));
+    }
+
+    // Single-item customers among today's visitors (best-effort via distinct ItemName in last 12 months).
+    let single_item_customers: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ( \
+           SELECT b.Customer_ID \
+           FROM bills b \
+           JOIN billoperationrecords r ON r.BillId = b.ID \
+           JOIN billoperationrecorditems i ON i.RecordId = r.ID \
+           WHERE b.ClinicId = ? AND b.IsRefund = 0 \
+             AND r.OperationTime >= ? AND r.OperationTime < ? \
+             AND b.Customer_ID IN ( \
+               SELECT DISTINCT Customer_ID \
+               FROM bills \
+               WHERE ClinicId = ? AND CreateTime >= ? AND CreateTime < ? AND IsRefund = 0 \
+             ) \
+           GROUP BY b.Customer_ID \
+           HAVING COUNT(DISTINCT i.ItemName) = 1 \
+         ) t",
+    )
+    .bind(&store_id)
+    .bind(start - Duration::days(365))
+    .bind(end)
+    .bind(&store_id)
+    .bind(start)
+    .bind(end)
+    .fetch_one(pool)
+    .await
+    .map_err(|err| MysqlAssembleError::Db(err.to_string()))?;
+
+    // VIP customers among today's visitors (best-effort via latest customer_level_historys.new_level LIKE '%VIP%').
+    let vip_customers: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ( \
+           SELECT c.Customer_ID \
+           FROM ( \
+             SELECT DISTINCT Customer_ID \
+             FROM bills \
+             WHERE ClinicId = ? AND CreateTime >= ? AND CreateTime < ? AND IsRefund = 0 \
+           ) c \
+           JOIN ( \
+             SELECT customer_id, MAX(create_time) AS last_time \
+             FROM customer_level_historys \
+             GROUP BY customer_id \
+           ) last ON last.customer_id = c.Customer_ID \
+           JOIN customer_level_historys h \
+             ON h.customer_id = last.customer_id AND h.create_time = last.last_time \
+           WHERE h.new_level LIKE '%VIP%' \
+         ) t",
+    )
+    .bind(&store_id)
+    .bind(start)
+    .bind(end)
+    .fetch_one(pool)
+    .await
+    .map_err(|err| MysqlAssembleError::Db(err.to_string()))?;
+
     let customer_summary = json!({
-        "new": { "count": new_count, "gmv": new_gmv },
+        "new": { "count": new_count, "gmv": new_gmv, "sources": new_sources },
         "old": { "count": old_count, "gmv": old_gmv },
-        "single_item_customers": 0,
-        "vip_customers": 0
+        "single_item_customers": (single_item_customers.max(0) as f64),
+        "vip_customers": (vip_customers.max(0) as f64)
     });
 
     // ---------- Key items (MTD) ----------
@@ -551,6 +648,8 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
         "data_cutoff_time": cutoff_time,
         "his": {
             "visits": today_visits,
+            "appointments": (today_appointments_count.max(0) as f64),
+            "deals": today_visits,
             "gmv": today_gmv,
             "consumption": today_gmv,
             "avg_ticket": today_avg_ticket,

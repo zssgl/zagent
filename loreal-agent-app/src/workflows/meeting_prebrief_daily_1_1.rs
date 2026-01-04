@@ -857,6 +857,16 @@ fn render_report_md(input: &Value, output: &Value) -> String {
         format_currency(consumption),
         format_pct_delta(consumption_vs_7d)
     ));
+    let today_appts = number_or_zero(get_value_at_path(input, "his.appointments"));
+    let today_deals = number_or_zero(get_value_at_path(input, "his.deals"));
+    if today_appts > 0.0 || today_deals > 0.0 {
+        lines.push(format!(
+            "- 今日预约人数：{}，到店人数：{}；成交人数：{}",
+            format_int_like(today_appts),
+            format_int_like(visits),
+            format_int_like(today_deals)
+        ));
+    }
     lines.push(format!(
         "- 今日到店人数：{}；客单价：{}（{}）",
         format_int_like(visits),
@@ -923,6 +933,23 @@ fn render_report_md(input: &Value, output: &Value) -> String {
         let vip = number_or_zero(get_value_at_path(&customer_summary, "vip_customers"));
         if new_count > 0.0 || old_count > 0.0 {
             lines.push(format!("- 新客：{}人，{}", format_int_like(new_count), format_currency(new_gmv)));
+            let sources = get_value_at_path(&customer_summary, "new.sources")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            if !sources.is_empty() {
+                for s in sources.iter().take(5) {
+                    let source = s.get("source").and_then(|v| v.as_str()).unwrap_or("未知");
+                    let cnt = number_or_zero(s.get("count"));
+                    let gmv = number_or_zero(s.get("gmv"));
+                    lines.push(format!(
+                        "  - {}：{}人，{}",
+                        source,
+                        format_int_like(cnt),
+                        format_currency(gmv)
+                    ));
+                }
+            }
             lines.push(format!("- 老客：{}人，{}", format_int_like(old_count), format_currency(old_gmv)));
         }
         if single_item > 0.0 {
