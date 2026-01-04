@@ -4,6 +4,9 @@ This version is redesigned to align with `../【夕会前】日会数据简报�
 
 - `report_md`: a WeCom-ready Markdown brief (human readable)
 - structured JSON sections for UI/automation (`facts_recap`, `risks`, `tomorrow_list`, `checklist`)
+- the report is also saved locally under `reports/briefing_YYYYMMDD.md`
+
+The output directory can be overridden via `REPORTS_DIR`.
 
 ## Key files
 

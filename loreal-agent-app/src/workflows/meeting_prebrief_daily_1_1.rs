@@ -309,6 +309,9 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
         });
 
         let report_md = render_report_md(&input, &output);
+        persist_report_md(&report_md, &biz_date)
+            .await
+            .map_err(|err| AgentError::Fatal(err))?;
         if let Value::Object(map) = &mut output {
             map.insert("report_md".to_string(), Value::String(report_md));
         }
@@ -332,6 +335,21 @@ fn wants_mysql_assembly(context: Option<&Value>) -> bool {
             .is_some_and(|v| v.eq_ignore_ascii_case("mysql")),
         _ => false,
     }
+}
+
+async fn persist_report_md(report_md: &str, biz_date: &str) -> Result<(), String> {
+    let file_suffix = chrono::NaiveDate::parse_from_str(biz_date, "%Y-%m-%d")
+        .map(|d| d.format("%Y%m%d").to_string())
+        .unwrap_or_else(|_| biz_date.replace('-', ""));
+    let report_dir = std::env::var("REPORTS_DIR").unwrap_or_else(|_| "reports".to_string());
+    tokio::fs::create_dir_all(&report_dir)
+        .await
+        .map_err(|err| format!("create reports dir failed: {}", err))?;
+    let report_path = format!("{}/briefing_{}.md", report_dir, file_suffix);
+    tokio::fs::write(&report_path, report_md.as_bytes())
+        .await
+        .map_err(|err| format!("write report failed: {}", err))?;
+    Ok(())
 }
 
 fn build_facts_recap(input: &Value) -> Value {
