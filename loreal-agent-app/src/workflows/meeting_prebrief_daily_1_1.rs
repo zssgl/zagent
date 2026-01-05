@@ -142,6 +142,10 @@ pub struct MeetingPrebriefDaily1_1Runner {
     tools: SharedTools,
 }
 
+struct ExecutionPlan {
+    use_mysql_assembly: bool,
+}
+
 impl MeetingPrebriefDaily1_1Runner {
     pub fn from_spec(spec: &WorkflowSpec, tools: SharedTools) -> Result<Self, String> {
         let rules_path = spec
@@ -181,149 +185,198 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
     }
 
     async fn run(&self, input: Value) -> Result<WorkflowOutput, AgentError> {
-        let mut input = input;
-
-        // Tool usage: allow server-side assembly from MySQL with a single request.
-        if wants_mysql_assembly(input.get("__context")) {
-            let Some(pool) = self.tools.mysql() else {
-                return Err(AgentError::Fatal(
-                    "mysql not configured (DATABASE_URL missing or connection failed)".to_string(),
-                ));
-            };
-            let assembled = assemble_meeting_prebrief_daily_1_1_mysql(pool, &input)
-                .await
-                .map_err(|err| match err {
-                    MysqlAssembleError::InvalidInput(message) => AgentError::Fatal(message),
-                    MysqlAssembleError::Db(message) => AgentError::Retryable(message),
-                })?;
-            let mut merged = assembled;
-            merge_json(&mut merged, &input);
-            input = merged;
-        }
-        if let Value::Object(map) = &mut input {
-            map.remove("__context");
-        }
-
-        let store_id = input
-            .get("store_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string();
-        let biz_date = input
+        let plan = build_execution_plan(&input);
+        let input = normalize_input(input, &plan, &self.tools).await?;
+        let output = execute_workflow(&input, &self.rules, &self.thresholds);
+        let report_md = render_report_md(&input, &output);
+        let biz_date = output
             .get("biz_date")
             .and_then(|v| v.as_str())
-            .unwrap_or("1970-01-01")
-            .to_string();
-
-        let (appointments, appointments_count) = build_appointments(&input);
-        let followups = build_followups(&input);
-        let tomorrow_list = json!({
-            "appointments": appointments,
-            "followups": followups
-        });
-
-        let wecom_touch = get_value_at_path(&input, "wecom_touch").and_then(|v| v.as_object());
-        let no_reply_list_len = wecom_touch
-            .and_then(|w| w.get("no_reply_list"))
-            .and_then(|v| v.as_array())
-            .map(|v| v.len())
-            .unwrap_or(0);
-        let contacted = number_or_zero(wecom_touch.and_then(|w| w.get("contacted")));
-        let replied = number_or_zero(wecom_touch.and_then(|w| w.get("replied")));
-        let no_reply_rate = if contacted > 0.0 {
-            (contacted - replied) / contacted
-        } else {
-            0.0
-        };
-
-        let metrics = Metrics {
-            visits: number_or_zero(get_value_at_path(&input, "his.visits")),
-            visits_avg_7d: number_or_zero(get_value_at_path(&input, "baselines.rolling_7d.visits_avg")),
-            gmv: number_or_zero(get_value_at_path(&input, "his.gmv")),
-            gmv_avg_7d: number_or_zero(get_value_at_path(&input, "baselines.rolling_7d.gmv_avg")),
-            consumption: number_or_zero(get_value_at_path(&input, "his.consumption")),
-            consumption_avg_7d: number_or_zero(get_value_at_path(
-                &input,
-                "baselines.rolling_7d.consumption_avg",
-            )),
-            avg_ticket: number_or_zero(get_value_at_path(&input, "his.avg_ticket")),
-            avg_ticket_avg_7d: number_or_zero(get_value_at_path(
-                &input,
-                "baselines.rolling_7d.avg_ticket_avg",
-            )),
-            mtd_gmv: number_or_zero(get_value_at_path(&input, "mtd.gmv")),
-            mtd_consumption: number_or_zero(get_value_at_path(&input, "mtd.consumption")),
-            mtd_gmv_target: number_or_zero(get_value_at_path(&input, "mtd.gmv_target")),
-            mtd_consumption_target: number_or_zero(get_value_at_path(&input, "mtd.consumption_target")),
-            mtd_time_progress: number_or_zero(get_value_at_path(&input, "mtd.time_progress")),
-            appointments_count,
-            no_reply_list_len,
-            contacted,
-            replied,
-        };
-
-        let thresholds_replacements = self.thresholds.replacements();
-        let mut risks = Vec::new();
-        for rule in self.rules.risks.iter() {
-            let Some(mut note_replacements) =
-                evaluate_rule(rule, &metrics, no_reply_rate, &self.thresholds)
-            else {
-                continue;
-            };
-            let threshold_text = render_template(&rule.threshold, &thresholds_replacements);
-            note_replacements.extend(thresholds_replacements.clone());
-            let note_text = render_template(&rule.note_template, &note_replacements);
-            push_risk(
-                &mut risks,
-                &rule.risk_type,
-                threshold_text,
-                &rule.evidence_fields,
-                note_text,
-            );
-        }
-
-        let checklist = build_checklist(
-            &biz_date,
-            appointments_count,
-            &risks,
-            &self.rules.checklist_templates,
-        );
-
-        let facts_recap = build_facts_recap(&input);
-
-        let wecom_touch_complete = get_value_at_path(&input, "wecom_touch").is_some();
-        let mut data_quality_notes = Vec::new();
-        if !wecom_touch_complete {
-            data_quality_notes.push("wecom_touch missing".to_string());
-        }
-
-        let mut output = json!({
-            "run_id": format!("run_{}", Uuid::new_v4()),
-            "biz_date": biz_date,
-            "store_id": store_id,
-            "facts_recap": facts_recap,
-            "tomorrow_list": tomorrow_list,
-            "risks": risks,
-            "checklist": checklist,
-            "data_quality": {
-                "wecom_touch_complete": wecom_touch_complete,
-                "notes": data_quality_notes
-            }
-        });
-
-        let report_md = render_report_md(&input, &output);
-        persist_report_md(&report_md, &biz_date)
+            .unwrap_or("1970-01-01");
+        persist_report_md(&report_md, biz_date)
             .await
             .map_err(|err| AgentError::Fatal(err))?;
-        if let Value::Object(map) = &mut output {
-            map.insert("report_md".to_string(), Value::String(report_md));
-        }
+        let output = attach_report_md(output, report_md);
 
         Ok(WorkflowOutput {
             output,
             artifacts: Vec::new(),
         })
     }
+}
+
+fn build_execution_plan(input: &Value) -> ExecutionPlan {
+    ExecutionPlan {
+        use_mysql_assembly: wants_mysql_assembly(input.get("__context")),
+    }
+}
+
+async fn normalize_input(
+    mut input: Value,
+    plan: &ExecutionPlan,
+    tools: &SharedTools,
+) -> Result<Value, AgentError> {
+    if plan.use_mysql_assembly {
+        let Some(pool) = tools.mysql() else {
+            return Err(AgentError::Fatal(
+                "mysql not configured (DATABASE_URL missing or connection failed)".to_string(),
+            ));
+        };
+        let assembled = assemble_meeting_prebrief_daily_1_1_mysql(pool, &input)
+            .await
+            .map_err(|err| match err {
+                MysqlAssembleError::InvalidInput(message) => AgentError::Fatal(message),
+                MysqlAssembleError::Db(message) => AgentError::Retryable(message),
+            })?;
+        let mut merged = assembled;
+        merge_json(&mut merged, &input);
+        input = merged;
+    }
+    if let Value::Object(map) = &mut input {
+        map.remove("__context");
+    }
+    Ok(input)
+}
+
+fn execute_workflow(input: &Value, rules: &WorkflowRules, thresholds: &ThresholdMap) -> Value {
+    let store_id = input
+        .get("store_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let biz_date = input
+        .get("biz_date")
+        .and_then(|v| v.as_str())
+        .unwrap_or("1970-01-01")
+        .to_string();
+
+    let (appointments, appointments_count) = build_appointments(input);
+    let followups = build_followups(input);
+    let tomorrow_list = json!({
+        "appointments": appointments,
+        "followups": followups
+    });
+
+    let (metrics, no_reply_rate, wecom_touch_complete, data_quality_notes) =
+        build_metrics(input, appointments_count);
+
+    let thresholds_replacements = thresholds.replacements();
+    let risks = build_risks(rules, thresholds, &metrics, no_reply_rate, &thresholds_replacements);
+
+    let checklist = build_checklist(
+        &biz_date,
+        appointments_count,
+        &risks,
+        &rules.checklist_templates,
+    );
+    let facts_recap = build_facts_recap(input);
+
+    json!({
+        "run_id": format!("run_{}", Uuid::new_v4()),
+        "biz_date": biz_date,
+        "store_id": store_id,
+        "facts_recap": facts_recap,
+        "tomorrow_list": tomorrow_list,
+        "risks": risks,
+        "checklist": checklist,
+        "data_quality": {
+            "wecom_touch_complete": wecom_touch_complete,
+            "notes": data_quality_notes
+        }
+    })
+}
+
+fn build_metrics(
+    input: &Value,
+    appointments_count: usize,
+) -> (Metrics, f64, bool, Vec<String>) {
+    let wecom_touch = get_value_at_path(input, "wecom_touch").and_then(|v| v.as_object());
+    let no_reply_list_len = wecom_touch
+        .and_then(|w| w.get("no_reply_list"))
+        .and_then(|v| v.as_array())
+        .map(|v| v.len())
+        .unwrap_or(0);
+    let contacted = number_or_zero(wecom_touch.and_then(|w| w.get("contacted")));
+    let replied = number_or_zero(wecom_touch.and_then(|w| w.get("replied")));
+    let no_reply_rate = if contacted > 0.0 {
+        (contacted - replied) / contacted
+    } else {
+        0.0
+    };
+
+    let metrics = Metrics {
+        visits: number_or_zero(get_value_at_path(input, "his.visits")),
+        visits_avg_7d: number_or_zero(get_value_at_path(input, "baselines.rolling_7d.visits_avg")),
+        gmv: number_or_zero(get_value_at_path(input, "his.gmv")),
+        gmv_avg_7d: number_or_zero(get_value_at_path(input, "baselines.rolling_7d.gmv_avg")),
+        consumption: number_or_zero(get_value_at_path(input, "his.consumption")),
+        consumption_avg_7d: number_or_zero(get_value_at_path(
+            input,
+            "baselines.rolling_7d.consumption_avg",
+        )),
+        avg_ticket: number_or_zero(get_value_at_path(input, "his.avg_ticket")),
+        avg_ticket_avg_7d: number_or_zero(get_value_at_path(
+            input,
+            "baselines.rolling_7d.avg_ticket_avg",
+        )),
+        mtd_gmv: number_or_zero(get_value_at_path(input, "mtd.gmv")),
+        mtd_consumption: number_or_zero(get_value_at_path(input, "mtd.consumption")),
+        mtd_gmv_target: number_or_zero(get_value_at_path(input, "mtd.gmv_target")),
+        mtd_consumption_target: number_or_zero(get_value_at_path(input, "mtd.consumption_target")),
+        mtd_time_progress: number_or_zero(get_value_at_path(input, "mtd.time_progress")),
+        appointments_count,
+        no_reply_list_len,
+        contacted,
+        replied,
+    };
+
+    let wecom_touch_complete = get_value_at_path(input, "wecom_touch").is_some();
+    let mut data_quality_notes = Vec::new();
+    if !wecom_touch_complete {
+        data_quality_notes.push("wecom_touch missing".to_string());
+    }
+
+    (
+        metrics,
+        no_reply_rate,
+        wecom_touch_complete,
+        data_quality_notes,
+    )
+}
+
+fn build_risks(
+    rules: &WorkflowRules,
+    thresholds: &ThresholdMap,
+    metrics: &Metrics,
+    no_reply_rate: f64,
+    thresholds_replacements: &[(String, String)],
+) -> Vec<Value> {
+    let mut risks = Vec::new();
+    for rule in rules.risks.iter() {
+        let Some(mut note_replacements) =
+            evaluate_rule(rule, metrics, no_reply_rate, thresholds)
+        else {
+            continue;
+        };
+        let threshold_text = render_template(&rule.threshold, thresholds_replacements);
+        note_replacements.extend(thresholds_replacements.to_vec());
+        let note_text = render_template(&rule.note_template, &note_replacements);
+        push_risk(
+            &mut risks,
+            &rule.risk_type,
+            threshold_text,
+            &rule.evidence_fields,
+            note_text,
+        );
+    }
+    risks
+}
+
+fn attach_report_md(mut output: Value, report_md: String) -> Value {
+    if let Value::Object(map) = &mut output {
+        map.insert("report_md".to_string(), Value::String(report_md));
+    }
+    output
 }
 
 fn wants_mysql_assembly(context: Option<&Value>) -> bool {
