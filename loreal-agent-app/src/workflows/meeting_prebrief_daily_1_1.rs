@@ -207,6 +207,15 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
         if let Some(risk_summary) = maybe_generate_llm_risk_summary(&input, &output).await {
             output = attach_agent_risk_summary(output, risk_summary);
         }
+        if let Some(staff_summary) = maybe_generate_llm_staff_summary(&input, &output).await {
+            output = attach_agent_staff_summary(output, staff_summary);
+        }
+        if let Some(customer_summary) = maybe_generate_llm_customer_summary(&input, &output).await {
+            output = attach_agent_customer_summary(output, customer_summary);
+        }
+        if let Some(key_items_summary) = maybe_generate_llm_key_items_summary(&input, &output).await {
+            output = attach_agent_key_items_summary(output, key_items_summary);
+        }
         let report_md = render_report_md(&input, &output);
         let output = attach_report_md(output, report_md);
         validate_output_schema(&output, &self.output_schema)?;
@@ -499,6 +508,201 @@ async fn maybe_generate_llm_risk_summary(input: &Value, output: &Value) -> Optio
     }
 }
 
+async fn maybe_generate_llm_staff_summary(input: &Value, output: &Value) -> Option<Vec<String>> {
+    let Some(config) = LlmConfig::from_env() else {
+        return None;
+    };
+    let client = LlmClient::new(config);
+    let payload = json!({
+        "staff_stats": output.get("facts_recap").and_then(|v| v.get("staff_stats")),
+        "input_hint": {
+            "store_id": input.get("store_id"),
+            "biz_date": input.get("biz_date")
+        }
+    });
+    let prompt = format!(
+        "请基于以下 JSON 生成“各健康管理人完成情况”的智能总结，仅可引用已提供数据。\n\
+规则：\n\
+1) 严禁编造数字或事实；\n\
+2) 输出 2-4 条要点；\n\
+3) 返回 JSON 仅包含 {{\"summary\":[\"...\"]}}。\n\
+数据：{}\n",
+        payload
+    );
+    let messages = vec![
+        LlmMessage {
+            role: "system".to_string(),
+            content: "只返回 JSON。".to_string(),
+        },
+        LlmMessage {
+            role: "user".to_string(),
+            content: prompt,
+        },
+    ];
+    let response = match client.chat_json(&messages).await {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(stage = "llm_staff_summary", error = %err, "llm staff summary failed");
+            return None;
+        }
+    };
+    let summary = match response.get("summary").and_then(|v| v.as_array()) {
+        Some(value) => value,
+        None => {
+            warn!(
+                stage = "llm_staff_summary",
+                response = %response,
+                "llm staff summary missing summary"
+            );
+            return None;
+        }
+    };
+    let mut items = Vec::new();
+    for item in summary.iter().take(4) {
+        if let Some(text) = item.as_str() {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                items.push(trimmed.to_string());
+            }
+        }
+    }
+    if items.is_empty() {
+        None
+    } else {
+        Some(items)
+    }
+}
+
+async fn maybe_generate_llm_customer_summary(input: &Value, output: &Value) -> Option<Vec<String>> {
+    let Some(config) = LlmConfig::from_env() else {
+        return None;
+    };
+    let client = LlmClient::new(config);
+    let payload = json!({
+        "customer_summary": output.get("facts_recap").and_then(|v| v.get("customer_summary")),
+        "input_hint": {
+            "store_id": input.get("store_id"),
+            "biz_date": input.get("biz_date")
+        }
+    });
+    let prompt = format!(
+        "请基于以下 JSON 生成“顾客摘要”的智能总结，仅可引用已提供数据。\n\
+规则：\n\
+1) 严禁编造数字或事实；\n\
+2) 输出 2-4 条要点；\n\
+3) 返回 JSON 仅包含 {{\"summary\":[\"...\"]}}。\n\
+数据：{}\n",
+        payload
+    );
+    let messages = vec![
+        LlmMessage {
+            role: "system".to_string(),
+            content: "只返回 JSON。".to_string(),
+        },
+        LlmMessage {
+            role: "user".to_string(),
+            content: prompt,
+        },
+    ];
+    let response = match client.chat_json(&messages).await {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(stage = "llm_customer_summary", error = %err, "llm customer summary failed");
+            return None;
+        }
+    };
+    let summary = match response.get("summary").and_then(|v| v.as_array()) {
+        Some(value) => value,
+        None => {
+            warn!(
+                stage = "llm_customer_summary",
+                response = %response,
+                "llm customer summary missing summary"
+            );
+            return None;
+        }
+    };
+    let mut items = Vec::new();
+    for item in summary.iter().take(4) {
+        if let Some(text) = item.as_str() {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                items.push(trimmed.to_string());
+            }
+        }
+    }
+    if items.is_empty() {
+        None
+    } else {
+        Some(items)
+    }
+}
+
+async fn maybe_generate_llm_key_items_summary(input: &Value, output: &Value) -> Option<Vec<String>> {
+    let Some(config) = LlmConfig::from_env() else {
+        return None;
+    };
+    let client = LlmClient::new(config);
+    let payload = json!({
+        "key_items_mtd": output.get("facts_recap").and_then(|v| v.get("key_items_mtd")),
+        "input_hint": {
+            "store_id": input.get("store_id"),
+            "biz_date": input.get("biz_date")
+        }
+    });
+    let prompt = format!(
+        "请基于以下 JSON 生成“关键品项完成”的智能总结，仅可引用已提供数据。\n\
+规则：\n\
+1) 严禁编造数字或事实；\n\
+2) 输出 2-4 条要点；\n\
+3) 返回 JSON 仅包含 {{\"summary\":[\"...\"]}}。\n\
+数据：{}\n",
+        payload
+    );
+    let messages = vec![
+        LlmMessage {
+            role: "system".to_string(),
+            content: "只返回 JSON。".to_string(),
+        },
+        LlmMessage {
+            role: "user".to_string(),
+            content: prompt,
+        },
+    ];
+    let response = match client.chat_json(&messages).await {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(stage = "llm_key_items_summary", error = %err, "llm key items summary failed");
+            return None;
+        }
+    };
+    let summary = match response.get("summary").and_then(|v| v.as_array()) {
+        Some(value) => value,
+        None => {
+            warn!(
+                stage = "llm_key_items_summary",
+                response = %response,
+                "llm key items summary missing summary"
+            );
+            return None;
+        }
+    };
+    let mut items = Vec::new();
+    for item in summary.iter().take(4) {
+        if let Some(text) = item.as_str() {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                items.push(trimmed.to_string());
+            }
+        }
+    }
+    if items.is_empty() {
+        None
+    } else {
+        Some(items)
+    }
+}
+
 fn build_metrics(
     input: &Value,
     appointments_count: usize,
@@ -612,6 +816,45 @@ fn attach_agent_risk_summary(mut output: Value, summary: Vec<String>) -> Value {
     if let Value::Object(map) = &mut output {
         map.insert(
             "agent_risk_summary".to_string(),
+            Value::Array(summary.into_iter().map(Value::String).collect()),
+        );
+    }
+    output
+}
+
+fn attach_agent_staff_summary(mut output: Value, summary: Vec<String>) -> Value {
+    if summary.is_empty() {
+        return output;
+    }
+    if let Value::Object(map) = &mut output {
+        map.insert(
+            "agent_staff_summary".to_string(),
+            Value::Array(summary.into_iter().map(Value::String).collect()),
+        );
+    }
+    output
+}
+
+fn attach_agent_customer_summary(mut output: Value, summary: Vec<String>) -> Value {
+    if summary.is_empty() {
+        return output;
+    }
+    if let Value::Object(map) = &mut output {
+        map.insert(
+            "agent_customer_summary".to_string(),
+            Value::Array(summary.into_iter().map(Value::String).collect()),
+        );
+    }
+    output
+}
+
+fn attach_agent_key_items_summary(mut output: Value, summary: Vec<String>) -> Value {
+    if summary.is_empty() {
+        return output;
+    }
+    if let Value::Object(map) = &mut output {
+        map.insert(
+            "agent_key_items_summary".to_string(),
             Value::Array(summary.into_iter().map(Value::String).collect()),
         );
     }
@@ -1227,6 +1470,22 @@ fn render_report_md(input: &Value, output: &Value) -> String {
             ));
         }
     }
+    let staff_summary = output
+        .get("agent_staff_summary")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    lines.push(String::new());
+    lines.push("<font color=\"RED\">智能总结</font>".to_string());
+    if staff_summary.is_empty() {
+        lines.push("暂无（LLM 未启用或未返回总结）".to_string());
+    } else {
+        for item in staff_summary.iter().take(6) {
+            if let Some(text) = item.as_str() {
+                lines.push(text.to_string());
+            }
+        }
+    }
     lines.push(String::new());
 
     lines.push("## 顾客摘要".to_string());
@@ -1277,6 +1536,22 @@ fn render_report_md(input: &Value, output: &Value) -> String {
             lines.push("- 数据未提供".to_string());
         }
     }
+    let customer_summary_llm = output
+        .get("agent_customer_summary")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    lines.push(String::new());
+    lines.push("<font color=\"RED\">智能总结</font>".to_string());
+    if customer_summary_llm.is_empty() {
+        lines.push("暂无（LLM 未启用或未返回总结）".to_string());
+    } else {
+        for item in customer_summary_llm.iter().take(6) {
+            if let Some(text) = item.as_str() {
+                lines.push(text.to_string());
+            }
+        }
+    }
     lines.push(String::new());
 
     lines.push("## 关键品项完成（本月至今）".to_string());
@@ -1302,6 +1577,22 @@ fn render_report_md(input: &Value, output: &Value) -> String {
                 format_currency(cons_mtd),
                 format_pct_delta(wow_cons)
             ));
+        }
+    }
+    let key_items_summary = output
+        .get("agent_key_items_summary")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    lines.push(String::new());
+    lines.push("<font color=\"RED\">智能总结</font>".to_string());
+    if key_items_summary.is_empty() {
+        lines.push("暂无（LLM 未启用或未返回总结）".to_string());
+    } else {
+        for item in key_items_summary.iter().take(6) {
+            if let Some(text) = item.as_str() {
+                lines.push(text.to_string());
+            }
         }
     }
     lines.push(String::new());

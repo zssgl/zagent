@@ -13,6 +13,18 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "agent_staff_summary": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "agent_customer_summary": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "agent_key_items_summary": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "facts_recap": {
       "type": "object",
       "properties": {
