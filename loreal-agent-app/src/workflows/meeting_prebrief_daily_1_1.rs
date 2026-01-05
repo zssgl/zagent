@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use super::spec::WorkflowSpec;
+use crate::llm::{LlmClient, LlmConfig, LlmMessage};
 use crate::tools::{
     assemble_meeting_prebrief_daily_1_1_mysql, merge_json, MysqlAssembleError, SharedTools,
 };
@@ -146,6 +147,13 @@ pub struct MeetingPrebriefDaily1_1Runner {
 
 struct ExecutionPlan {
     use_mysql_assembly: bool,
+    plan_id: Option<String>,
+}
+
+struct PlanCandidate {
+    id: String,
+    use_mysql_assembly: bool,
+    note: Option<String>,
 }
 
 impl MeetingPrebriefDaily1_1Runner {
@@ -194,10 +202,13 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
     }
 
     async fn run(&self, input: Value) -> Result<WorkflowOutput, AgentError> {
-        let plan = build_execution_plan(&input);
+        let plan = select_execution_plan(&input).await;
         let input = normalize_input(input, &plan, &self.tools).await?;
         validate_input_completeness(&input)?;
-        let output = execute_workflow(&input, &self.rules, &self.thresholds);
+        let mut output = execute_workflow(&input, &self.rules, &self.thresholds);
+        if let Some(summary) = maybe_generate_llm_summary(&input, &output).await {
+            output = attach_agent_summary(output, summary);
+        }
         let report_md = render_report_md(&input, &output);
         let output = attach_report_md(output, report_md);
         validate_output_schema(&output, &self.output_schema)?;
@@ -220,10 +231,112 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
     }
 }
 
+async fn select_execution_plan(input: &Value) -> ExecutionPlan {
+    let default_plan = build_execution_plan(input);
+    let Some(candidates) = parse_plan_candidates(input.get("__context")) else {
+        return default_plan;
+    };
+    if candidates.is_empty() {
+        return default_plan;
+    }
+
+    let Some(config) = LlmConfig::from_env() else {
+        return pick_candidate_fallback(default_plan, &candidates);
+    };
+    let client = LlmClient::new(config);
+    let input_hint = json!({
+        "has_his": input.get("his").is_some(),
+        "store_id": input.get("store_id").and_then(|v| v.as_str()),
+        "biz_date": input.get("biz_date").and_then(|v| v.as_str()),
+        "context": input.get("__context").cloned().unwrap_or(Value::Null)
+    });
+    let payload = json!({
+        "candidates": candidates.iter().map(|c| {
+            json!({
+                "id": c.id,
+                "use_mysql_assembly": c.use_mysql_assembly,
+                "note": c.note
+            })
+        }).collect::<Vec<Value>>(),
+        "input_hint": input_hint
+    });
+    let prompt = format!(
+        "You are selecting a workflow execution plan.\n\
+Return JSON only: {{\"plan_id\":\"...\"}}.\n\
+Choose one plan_id from candidates, no extra keys.\n\
+Payload JSON: {}\n",
+        payload
+    );
+    let messages = vec![
+        LlmMessage {
+            role: "system".to_string(),
+            content: "Return JSON only.".to_string(),
+        },
+        LlmMessage {
+            role: "user".to_string(),
+            content: prompt,
+        },
+    ];
+    let Ok(response) = client.chat_json(&messages).await else {
+        return pick_candidate_fallback(default_plan, &candidates);
+    };
+    let Some(plan_id) = response.get("plan_id").and_then(|v| v.as_str()) else {
+        return pick_candidate_fallback(default_plan, &candidates);
+    };
+    if let Some(candidate) = candidates.iter().find(|c| c.id == plan_id) {
+        return ExecutionPlan {
+            use_mysql_assembly: candidate.use_mysql_assembly,
+            plan_id: Some(candidate.id.clone()),
+        };
+    }
+    pick_candidate_fallback(default_plan, &candidates)
+}
+
 fn build_execution_plan(input: &Value) -> ExecutionPlan {
     ExecutionPlan {
         use_mysql_assembly: wants_mysql_assembly(input.get("__context")),
+        plan_id: None,
     }
+}
+
+fn pick_candidate_fallback(default_plan: ExecutionPlan, candidates: &[PlanCandidate]) -> ExecutionPlan {
+    if let Some(candidate) = candidates
+        .iter()
+        .find(|c| c.use_mysql_assembly == default_plan.use_mysql_assembly)
+    {
+        return ExecutionPlan {
+            use_mysql_assembly: candidate.use_mysql_assembly,
+            plan_id: Some(candidate.id.clone()),
+        };
+    }
+    default_plan
+}
+
+fn parse_plan_candidates(context: Option<&Value>) -> Option<Vec<PlanCandidate>> {
+    let Some(context) = context else {
+        return None;
+    };
+    let list = context.get("plan_candidates")?.as_array()?;
+    let mut candidates = Vec::new();
+    for item in list {
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
+        let Some(id) = obj.get("id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let use_mysql_assembly = obj
+            .get("use_mysql_assembly")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let note = obj.get("note").and_then(|v| v.as_str()).map(|v| v.to_string());
+        candidates.push(PlanCandidate {
+            id: id.to_string(),
+            use_mysql_assembly,
+            note,
+        });
+    }
+    Some(candidates)
 }
 
 fn validate_input_completeness(input: &Value) -> Result<(), AgentError> {
@@ -366,6 +479,58 @@ fn execute_workflow(input: &Value, rules: &WorkflowRules, thresholds: &Threshold
     })
 }
 
+async fn maybe_generate_llm_summary(input: &Value, output: &Value) -> Option<Vec<String>> {
+    let Some(config) = LlmConfig::from_env() else {
+        return None;
+    };
+    let client = LlmClient::new(config);
+    let payload = json!({
+        "facts_recap": output.get("facts_recap"),
+        "risks": output.get("risks"),
+        "checklist": output.get("checklist"),
+        "data_quality": output.get("data_quality"),
+        "input_hint": {
+            "store_id": input.get("store_id"),
+            "biz_date": input.get("biz_date")
+        }
+    });
+    let prompt = format!(
+        "请基于以下 JSON 生成“智能总结”要点，必须可追溯到字段。\n\
+规则：\n\
+1) 严禁编造数字或事实；\n\
+2) 只输出 3-6 条短句；\n\
+3) 返回 JSON 仅包含 {{\"summary\":[\"...\"]}}。\n\
+数据：{}\n",
+        payload
+    );
+    let messages = vec![
+        LlmMessage {
+            role: "system".to_string(),
+            content: "只返回 JSON。".to_string(),
+        },
+        LlmMessage {
+            role: "user".to_string(),
+            content: prompt,
+        },
+    ];
+    let response = client.chat_json(&messages).await.ok()?;
+    let summary = response.get("summary").and_then(|v| v.as_array())?;
+    let mut items = Vec::new();
+    for item in summary.iter().take(6) {
+        if let Some(text) = item.as_str() {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                items.push(trimmed.to_string());
+            }
+        }
+    }
+    if items.is_empty() {
+        None
+    } else {
+        Some(items)
+    }
+}
+
 fn build_metrics(
     input: &Value,
     appointments_count: usize,
@@ -455,6 +620,19 @@ fn build_risks(
 fn attach_report_md(mut output: Value, report_md: String) -> Value {
     if let Value::Object(map) = &mut output {
         map.insert("report_md".to_string(), Value::String(report_md));
+    }
+    output
+}
+
+fn attach_agent_summary(mut output: Value, summary: Vec<String>) -> Value {
+    if summary.is_empty() {
+        return output;
+    }
+    if let Value::Object(map) = &mut output {
+        map.insert(
+            "agent_summary".to_string(),
+            Value::Array(summary.into_iter().map(Value::String).collect()),
+        );
     }
     output
 }
@@ -949,30 +1127,39 @@ fn render_report_md(input: &Value, output: &Value) -> String {
         .cloned()
         .unwrap_or_default();
 
+    let agent_summary = output
+        .get("agent_summary")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
     let mut smart_summary = Vec::new();
-    if time_progress > 0.0 && (gmv_rate > 0.0 || consumption_rate > 0.0) {
-        let gap_threshold = 0.05;
-        if gmv_rate - time_progress < -gap_threshold {
-            smart_summary.push("开单完成进度落后于时间进度，需重点盯当晚可落地的补缺动作".to_string());
+    if agent_summary.is_empty() {
+        if time_progress > 0.0 && (gmv_rate > 0.0 || consumption_rate > 0.0) {
+            let gap_threshold = 0.05;
+            if gmv_rate - time_progress < -gap_threshold {
+                smart_summary
+                    .push("开单完成进度落后于时间进度，需重点盯当晚可落地的补缺动作".to_string());
+            }
+            if consumption_rate - time_progress < -gap_threshold {
+                smart_summary.push("消耗完成进度落后于时间进度，关注明日承接与当日消耗转化".to_string());
+            }
         }
-        if consumption_rate - time_progress < -gap_threshold {
-            smart_summary.push("消耗完成进度落后于时间进度，关注明日承接与当日消耗转化".to_string());
+        if avg_ticket_vs_7d <= -0.1 {
+            smart_summary.push("客单价低于近7日平均，关注升单/组合项目与高客单顾客推进".to_string());
         }
-    }
-    if avg_ticket_vs_7d <= -0.1 {
-        smart_summary.push("客单价低于近7日平均，关注升单/组合项目与高客单顾客推进".to_string());
-    }
-    if visits_vs_7d <= -0.1 {
-        smart_summary.push("到店人数低于近7日平均，关注明日预约承接与当晚邀约补量".to_string());
-    }
-    if gmv_vs_7d >= 0.5 {
-        smart_summary.push("今日开单显著高于近7日平均，关注大客/大单结构与交付承接".to_string());
-    }
-    if consumption_vs_7d >= 0.5 {
-        smart_summary.push("今日消耗显著高于近7日平均，关注疗程交付与复购承接".to_string());
-    }
-    if risks.iter().any(|r| r.get("type").and_then(|v| v.as_str()) == Some("touch_gap")) {
-        smart_summary.push("触达未回积压偏高，建议在夕会明确二触达 owner 与截止时间".to_string());
+        if visits_vs_7d <= -0.1 {
+            smart_summary.push("到店人数低于近7日平均，关注明日预约承接与当晚邀约补量".to_string());
+        }
+        if gmv_vs_7d >= 0.5 {
+            smart_summary.push("今日开单显著高于近7日平均，关注大客/大单结构与交付承接".to_string());
+        }
+        if consumption_vs_7d >= 0.5 {
+            smart_summary.push("今日消耗显著高于近7日平均，关注疗程交付与复购承接".to_string());
+        }
+        if risks.iter().any(|r| r.get("type").and_then(|v| v.as_str()) == Some("touch_gap")) {
+            smart_summary.push("触达未回积压偏高，建议在夕会明确二触达 owner 与截止时间".to_string());
+        }
     }
 
     let mut lines = Vec::new();
@@ -1015,7 +1202,13 @@ fn render_report_md(input: &Value, output: &Value) -> String {
     }
     lines.push(String::new());
     lines.push("<font color=\"RED\">智能总结</font>".to_string());
-    if smart_summary.is_empty() {
+    if !agent_summary.is_empty() {
+        for item in agent_summary.iter().take(6) {
+            if let Some(text) = item.as_str() {
+                lines.push(text.to_string());
+            }
+        }
+    } else if smart_summary.is_empty() {
         lines.push("暂无（关键上下文不足或未触发总结规则）".to_string());
     } else {
         for item in smart_summary.iter().take(6) {
