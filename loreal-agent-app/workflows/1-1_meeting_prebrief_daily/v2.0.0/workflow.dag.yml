@@ -1,0 +1,70 @@
+workflow_id: meeting_prebrief_daily
+version: v2.0.0
+format: dag.v1
+nodes:
+  - id: S0_request_received
+    type: state
+    description: Accept raw input and context.
+    inputs: [raw_input]
+    outputs: [raw_request]
+    agent_involved: false
+  - id: S1_normalization
+    type: state
+    description: Normalize fields, merge assembly results, remove context.
+    inputs: [raw_request]
+    outputs: [normalized_request]
+    agent_involved: false
+  - id: S2_completeness_check
+    type: decision
+    description: Ensure required fields are present (no guessing).
+    inputs: [normalized_request]
+    outputs: [complete_request, missing_info_list]
+    agent_involved: false
+  - id: S3A_missing_info_handling
+    type: state
+    description: Produce a clarification request for missing fields.
+    inputs: [missing_info_list]
+    outputs: [clarification_request]
+    agent_involved: optional
+  - id: S3B_execution_planning
+    type: decision
+    description: Build execution plan (tools and sequence).
+    inputs: [complete_request]
+    outputs: [execution_plan]
+    agent_involved: optional
+  - id: S4_execution
+    type: state
+    description: Assemble data, compute metrics, evaluate risks, build checklist.
+    inputs: [execution_plan]
+    outputs: [raw_result]
+    agent_involved: false
+  - id: S5_result_validation
+    type: state
+    description: Validate output schema and hard constraints.
+    inputs: [raw_result]
+    outputs: [final_result, error]
+    agent_involved: false
+  - id: S6_delivery_logging
+    type: state
+    description: Persist report and record audit trail.
+    inputs: [final_result]
+    outputs: [delivered]
+    agent_involved: false
+edges:
+  - from: S0_request_received
+    to: S1_normalization
+  - from: S1_normalization
+    to: S2_completeness_check
+  - from: S2_completeness_check
+    to: S3A_missing_info_handling
+    condition: missing_info_list.present
+  - from: S2_completeness_check
+    to: S3B_execution_planning
+    condition: complete_request.present
+  - from: S3B_execution_planning
+    to: S4_execution
+  - from: S4_execution
+    to: S5_result_validation
+  - from: S5_result_validation
+    to: S6_delivery_logging
+    condition: final_result.present

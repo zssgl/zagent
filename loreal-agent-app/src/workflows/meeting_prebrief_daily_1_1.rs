@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use agent_runtime::runtime::{AgentError, WorkflowOutput, WorkflowRunner};
+use jsonschema::JSONSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -140,6 +141,7 @@ pub struct MeetingPrebriefDaily1_1Runner {
     thresholds: ThresholdMap,
     rules: WorkflowRules,
     tools: SharedTools,
+    output_schema: JSONSchema,
 }
 
 struct ExecutionPlan {
@@ -164,12 +166,19 @@ impl MeetingPrebriefDaily1_1Runner {
         let thresholds: HashMap<String, serde_yaml::Value> =
             serde_yaml::from_str(&thresholds_content)
                 .map_err(|err| format!("invalid thresholds: {}", err))?;
+        let output_schema_content = std::fs::read_to_string(spec.output_schema_path())
+            .map_err(|err| format!("read output schema failed: {}", err))?;
+        let output_schema_json: Value = serde_json::from_str(&output_schema_content)
+            .map_err(|err| format!("invalid output schema json: {}", err))?;
+        let output_schema = JSONSchema::compile(&output_schema_json)
+            .map_err(|err| format!("invalid output schema: {}", err))?;
 
         Ok(Self {
             version: spec.version.clone(),
             thresholds: ThresholdMap(thresholds),
             rules,
             tools,
+            output_schema,
         })
     }
 }
@@ -187,16 +196,22 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
     async fn run(&self, input: Value) -> Result<WorkflowOutput, AgentError> {
         let plan = build_execution_plan(&input);
         let input = normalize_input(input, &plan, &self.tools).await?;
+        validate_input_completeness(&input)?;
         let output = execute_workflow(&input, &self.rules, &self.thresholds);
         let report_md = render_report_md(&input, &output);
+        let output = attach_report_md(output, report_md);
+        validate_output_schema(&output, &self.output_schema)?;
         let biz_date = output
             .get("biz_date")
             .and_then(|v| v.as_str())
             .unwrap_or("1970-01-01");
-        persist_report_md(&report_md, biz_date)
+        let report_md = output
+            .get("report_md")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        persist_report_md(report_md, biz_date)
             .await
             .map_err(|err| AgentError::Fatal(err))?;
-        let output = attach_report_md(output, report_md);
 
         Ok(WorkflowOutput {
             output,
@@ -209,6 +224,55 @@ fn build_execution_plan(input: &Value) -> ExecutionPlan {
     ExecutionPlan {
         use_mysql_assembly: wants_mysql_assembly(input.get("__context")),
     }
+}
+
+fn validate_input_completeness(input: &Value) -> Result<(), AgentError> {
+    let mut missing = Vec::new();
+
+    if input.get("store_id").and_then(|v| v.as_str()).is_none() {
+        missing.push("store_id".to_string());
+    }
+    if input.get("biz_date").and_then(|v| v.as_str()).is_none() {
+        missing.push("biz_date".to_string());
+    }
+    let his = input.get("his").and_then(|v| v.as_object());
+    if his.is_none() {
+        missing.push("his".to_string());
+    } else {
+        let his = his.unwrap();
+        for key in [
+            "visits",
+            "gmv",
+            "consumption",
+            "avg_ticket",
+            "new_customers",
+            "old_customers",
+        ] {
+            if !his.contains_key(key) {
+                missing.push(format!("his.{}", key));
+            }
+        }
+    }
+
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(AgentError::Fatal(format!(
+            "missing required fields: {}",
+            missing.join(", ")
+        )))
+    }
+}
+
+fn validate_output_schema(output: &Value, schema: &JSONSchema) -> Result<(), AgentError> {
+    if let Err(errors) = schema.validate(output) {
+        let messages: Vec<String> = errors.map(|err| err.to_string()).collect();
+        return Err(AgentError::Fatal(format!(
+            "output schema validation failed: {}",
+            messages.join("; ")
+        )));
+    }
+    Ok(())
 }
 
 async fn normalize_input(
