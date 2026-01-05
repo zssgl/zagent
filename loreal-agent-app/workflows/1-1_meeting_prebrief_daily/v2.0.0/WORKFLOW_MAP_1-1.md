@@ -49,14 +49,29 @@
 - `report_md`（Markdown 报告）
 - 落盘文件：`reports/briefing_YYYYMMDD.md`
 
-### 输出模板覆盖（对齐模板）
+### 输出（按模板章节）
 
-#### 今日经营摘要
-- `his.gmv`, `his.consumption`, `his.visits`, `his.avg_ticket` | mysql | 已实现
-- `his.appointments`, `his.deals` | mysql | 部分实现（best-effort：预约数来自 `appointments`；成交人数目前用当天有账单的 distinct 客户近似）
-- 7D 对比（`baselines.rolling_7d.*`）| mysql | 已实现
-- 月度累计（`mtd.gmv`, `mtd.consumption`, `mtd.time_progress`）| mysql | 已实现
-- 月度目标（`mtd.*_target`）| 输入 | 部分实现（需调用方提供）
+#### 今日经营摘要（模板指定字段）
+- 今日开单：金额 + 日同比/对比百分比
+- 今日消耗：金额 + 日同比/对比百分比
+- 今日预约人数 / 到店人数 / 成交人数
+- 月度累计开单
+- 月度累计消耗
+- 月度时间进度
+- 月度开单指标完成度（含目标值）
+- 月度消耗指标完成度（含目标值）
+
+**指标口径（当前实现）**
+- 今日开单：`bills.PayAmount` 当日汇总（`ClinicId + CreateTime`，`IsRefund=0`）
+- 今日消耗：当前等同今日开单（`consumption = gmv`）
+- 今日预约人数：`appointments` 当日 `StartTime` 计数（`OrginizationId` 匹配门店）
+- 到店人数：`bills` 当日 `Customer_ID` 去重计数
+- 成交人数：当前等同到店人数（近似口径）
+- 月度累计开单：当月 `bills.PayAmount` 汇总
+- 月度累计消耗：当前等同月度开单
+- 月度时间进度：当月天数进度 `day_of_month / days_in_month`
+- 月度开单指标完成度：`mtd.gmv / mtd.gmv_target`
+- 月度消耗指标完成度：`mtd.consumption / mtd.consumption_target`
 
 #### 智能总结
 - 规则总结 | 规则 | 已实现

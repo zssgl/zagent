@@ -996,6 +996,11 @@ fn render_report_md(input: &Value, output: &Value) -> String {
     let gmv_rate = number_or_zero(get_value_at_path(facts, "mtd.gmv_rate"));
     let consumption_rate = number_or_zero(get_value_at_path(facts, "mtd.consumption_rate"));
     let time_progress = number_or_zero(get_value_at_path(facts, "mtd.time_progress"));
+    let mtd_gmv = number_or_zero(get_value_at_path(facts, "mtd.gmv_mtd"));
+    let mtd_consumption = number_or_zero(get_value_at_path(facts, "mtd.consumption_mtd"));
+    let mtd_gmv_target = number_or_zero(get_value_at_path(facts, "mtd.gmv_target"));
+    let mtd_consumption_target =
+        number_or_zero(get_value_at_path(facts, "mtd.consumption_target"));
 
     let risks = output.get("risks").and_then(|v| v.as_array()).cloned().unwrap_or_default();
     let checklist = output
@@ -1081,6 +1086,36 @@ fn render_report_md(input: &Value, output: &Value) -> String {
             "- 月度指标完成度：开单 {}；消耗 {}",
             format_pct_ratio(gmv_rate),
             format_pct_ratio(consumption_rate)
+        ));
+    }
+    if mtd_gmv > 0.0 || mtd_consumption > 0.0 {
+        lines.push(format!(
+            "- 月度累计开单：{}",
+            format_currency(mtd_gmv)
+        ));
+        lines.push(format!(
+            "- 月度累计消耗：{}",
+            format_currency(mtd_consumption)
+        ));
+    }
+    if time_progress > 0.0 {
+        lines.push(format!(
+            "- 月度时间进度：{}",
+            format_pct_ratio(time_progress)
+        ));
+    }
+    if mtd_gmv_target > 0.0 {
+        lines.push(format!(
+            "- 月度开单指标完成度：{}（目标 {}）",
+            format_pct_ratio(gmv_rate),
+            format_currency(mtd_gmv_target)
+        ));
+    }
+    if mtd_consumption_target > 0.0 {
+        lines.push(format!(
+            "- 月度消耗指标完成度：{}（目标 {}）",
+            format_pct_ratio(consumption_rate),
+            format_currency(mtd_consumption_target)
         ));
     }
     lines.push(String::new());
