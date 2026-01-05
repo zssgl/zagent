@@ -21,4 +21,5 @@ target/
 .vscode/
 
 reports/
-target_samefs
+target_samefs/
+logs

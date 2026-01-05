@@ -21,4 +21,7 @@ sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "mysql", "chrono",
 thiserror = "1.0"
 tokio = { version = "1.37", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1.8", features = ["v4", "serde"] }

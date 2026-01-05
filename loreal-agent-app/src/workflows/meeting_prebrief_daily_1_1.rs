@@ -5,6 +5,7 @@ use agent_runtime::runtime::{AgentError, WorkflowOutput, WorkflowRunner};
 use jsonschema::JSONSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use super::spec::WorkflowSpec;
@@ -202,7 +203,11 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
     }
 
     async fn run(&self, input: Value) -> Result<WorkflowOutput, AgentError> {
+        info!(workflow = "meeting_prebrief_daily", stage = "start", "run started");
         let plan = select_execution_plan(&input).await;
+        if let Some(plan_id) = plan.plan_id.as_deref() {
+            info!(workflow = "meeting_prebrief_daily", stage = "plan_selected", plan_id);
+        }
         let input = normalize_input(input, &plan, &self.tools).await?;
         validate_input_completeness(&input)?;
         let mut output = execute_workflow(&input, &self.rules, &self.thresholds);
@@ -241,6 +246,7 @@ async fn select_execution_plan(input: &Value) -> ExecutionPlan {
     }
 
     let Some(config) = LlmConfig::from_env() else {
+        info!(stage = "plan_select", reason = "llm_disabled", "llm plan selection skipped");
         return pick_candidate_fallback(default_plan, &candidates);
     };
     let client = LlmClient::new(config);
@@ -278,9 +284,11 @@ Payload JSON: {}\n",
         },
     ];
     let Ok(response) = client.chat_json(&messages).await else {
+        warn!(stage = "plan_select", "llm plan selection failed; fallback");
         return pick_candidate_fallback(default_plan, &candidates);
     };
     let Some(plan_id) = response.get("plan_id").and_then(|v| v.as_str()) else {
+        warn!(stage = "plan_select", "llm plan selection missing plan_id; fallback");
         return pick_candidate_fallback(default_plan, &candidates);
     };
     if let Some(candidate) = candidates.iter().find(|c| c.id == plan_id) {
@@ -381,6 +389,7 @@ fn validate_input_completeness(input: &Value) -> Result<(), AgentError> {
             })
         }).collect::<Vec<Value>>()
     });
+    warn!(stage = "validate_input", missing = %details, "missing required fields");
     Err(AgentError::fatal_with_details(
         "missing required fields",
         details,
@@ -396,6 +405,7 @@ fn validate_output_schema(output: &Value, schema: &JSONSchema) -> Result<(), Age
             "kind": "output_schema_validation",
             "errors": mapped
         });
+        warn!(stage = "validate_output", errors = %details, "output schema validation failed");
         return Err(AgentError::fatal_with_details(
             "output schema validation failed",
             details,
@@ -410,6 +420,7 @@ async fn normalize_input(
     tools: &SharedTools,
 ) -> Result<Value, AgentError> {
     if plan.use_mysql_assembly {
+        info!(stage = "assemble_mysql", "mysql assembly requested");
         let Some(pool) = tools.mysql() else {
             return Err(AgentError::fatal(
                 "mysql not configured (DATABASE_URL missing or connection failed)",
@@ -424,6 +435,7 @@ async fn normalize_input(
         let mut merged = assembled;
         merge_json(&mut merged, &input);
         input = merged;
+        info!(stage = "assemble_mysql", "mysql assembly completed");
     }
     if let Value::Object(map) = &mut input {
         map.remove("__context");

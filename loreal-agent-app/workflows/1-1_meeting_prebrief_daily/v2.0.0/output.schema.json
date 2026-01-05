@@ -5,6 +5,10 @@
     "biz_date": { "type": "string" },
     "store_id": { "type": "string" },
     "report_md": { "type": "string" },
+    "agent_summary": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "facts_recap": {
       "type": "object",
       "properties": {
