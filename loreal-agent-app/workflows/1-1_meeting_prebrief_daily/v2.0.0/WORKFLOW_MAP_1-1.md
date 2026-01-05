@@ -52,112 +52,68 @@
 
 ### 输出（按模板章节）
 
-#### 今日经营摘要（模板指定字段）
-- 今日开单：金额 + 日同比/对比百分比
-- 今日消耗：金额 + 日同比/对比百分比
-- 今日预约人数 / 到店人数 / 成交人数
-- 月度累计开单
-- 月度累计消耗
-- 月度时间进度
-- 月度开单指标完成度（含目标值）
-- 月度消耗指标完成度（含目标值）
-
-**指标口径（当前实现）**
-- 今日开单：`bills.PayAmount` 当日汇总（`ClinicId + CreateTime`，`IsRefund=0`）
-- 今日消耗：当前等同今日开单（`consumption = gmv`）
-- 今日预约人数：`appointments` 当日 `StartTime` 计数（`OrginizationId` 匹配门店）
-- 到店人数：`bills` 当日 `Customer_ID` 去重计数
-- 成交人数：当前等同到店人数（近似口径）
-- 月度累计开单：当月 `bills.PayAmount` 汇总
-- 月度累计消耗：当前等同月度开单
-- 月度时间进度：当月天数进度 `day_of_month / days_in_month`
-- 月度开单指标完成度：`mtd.gmv / mtd.gmv_target`
-- 月度消耗指标完成度：`mtd.consumption / mtd.consumption_target`
+#### 今日经营摘要
+- 今日开单：`bills.PayAmount` 当日汇总（已实现）
+- 今日消耗：当前等同今日开单（已实现，口径简化）
+- 今日预约人数：`appointments` 当日计数（已实现）
+- 到店人数：`bills` 当日去重客户（已实现）
+- 成交人数：当前等同到店人数（已实现，近似口径）
+- 月度累计开单：当月 `bills.PayAmount` 汇总（已实现）
+- 月度累计消耗：当前等同月度开单（已实现，口径简化）
+- 月度时间进度：`day_of_month / days_in_month`（已实现）
+- 月度开单指标完成度：`mtd.gmv / mtd.gmv_target`（缺 `mtd.gmv_target` 时不展示）
+- 月度消耗指标完成度：`mtd.consumption / mtd.consumption_target`（缺目标时不展示）
 
 #### 智能总结
-- 规则总结 | 规则 | 已实现
-- LLM 总结 | llm | 已实现（可选）
+- 总结要点：LLM 生成（已实现，LLM 不可用时为空）
 
 #### 各健康管理人完成情况
-- `staff_stats`（今日/MTD gmv）| mysql | 已实现（best-effort：优先 `billemployees`，为空则 fallback `bills.CreateEmpId`，无员工归属规则）
-- R12 回购率 | mysql | 缺失（占位）
-- 目标达成 | 输入 | 缺失
-**智能总结（LLM）**
-- 输出：`agent_staff_summary`（写入 JSON 与 report）
-
-**模板输出字段清单**
-- 管理人姓名（已实现）
-- 今日开单 / 今日消耗（已实现，消耗为占位 0）
-- 本月累计开单 / 本月累计消耗（已实现，消耗为占位 0）
-- 达成率 / 目标值（缺失）
-- R12 回购率（缺失，占位 0）
-- 智能总结（已实现，LLM）
+- 管理人姓名：`staff_stats.staff_name`（已实现）
+- 今日开单/消耗：`staff_stats.today_gmv/today_consumption`（已实现，消耗为占位 0）
+- 本月累计开单/消耗：`staff_stats.mtd_gmv/mtd_consumption`（已实现，消耗为占位 0）
+- 达成率/目标：缺失（需目标数据）
+- R12 回购率：缺失（占位 0）
+- 智能总结：LLM 生成（已实现）
 
 #### 顾客摘要
-- 新/老客人数 + GMV | mysql | 已实现
-- 新客来源 | mysql | 已实现（best-effort：仅输出 `customers.LaiYuanID -> customdictionary.DisplayName`，未做业务渠道映射）
-- 单项目顾客 | mysql | 部分实现（best-effort：按近 12 个月 `billoperationrecorditems.ItemName` 去重计数，未排除促销/同义项目）
-- VIP 顾客 | mysql | 部分实现（best-effort：`customer_level_historys.new_level LIKE '%VIP%'`，无法区分 VVIP）
-- 老带新/美丽基金核验 | mysql | 缺失
-**智能总结（LLM）**
-- 输出：`agent_customer_summary`（写入 JSON 与 report）
-
-**模板输出字段清单**
-- 新客：人数、GMV、同比/对比（部分实现：人数/GMV 有）
-- 新客来源分层（老带新/小红书/大众点评等）（部分实现：仅原始来源名）
-- 老带新核验（推荐人信息/美丽基金金额）（缺失）
-- 老客：人数、GMV、同比/对比（部分实现：人数/GMV 有）
-- 单项目顾客占比（部分实现：仅人数，无占比）
-- VIP/VVIP 顾客占比（部分实现：仅 VIP 人数，无占比）
-- 智能总结（已实现，LLM）
+- 新客人数/GMV：`customer_summary.new.count/gmv`（已实现）
+- 新客来源分层：`customer_summary.new.sources`（部分实现，仅原始来源名）
+- 老带新核验/美丽基金：缺失（需业务规则/表）
+- 老客人数/GMV：`customer_summary.old.count/gmv`（已实现）
+- 单项目顾客：`customer_summary.single_item_customers`（部分实现，仅人数）
+- VIP/VVIP：`customer_summary.vip_customers`（部分实现，仅 VIP 人数）
+- 智能总结：LLM 生成（已实现）
 
 #### 关键品项完成（本月至今）
-- 关键品项 + MTD GMV | mysql | 已实现（best-effort：按 `billoperationrecorditems` 汇总，不做品项口径清洗）
-- WOW/同期对比 | 规则 | 缺失
-- 扫码购 | 外部 API | 缺失
-**智能总结（LLM）**
-- 输出：`agent_key_items_summary`（写入 JSON 与 report）
-
-**模板输出字段清单**
-- 关键品项开单/消耗（人数、金额）（部分实现：金额有，人数缺失）
-- WOW / 同期对比（缺失）
-- 单次比例 / 复购提示（缺失）
-- 扫码购明细（人数、金额、人员）（缺失）
-- 智能总结（已实现，LLM）
+- 品项开单/消耗金额：`key_items_mtd.gmv_mtd/consumption_mtd`（已实现）
+- 品项人数：缺失
+- WOW/同期对比：缺失
+- 单次比例/复购提示：缺失
+- 扫码购明细：缺失
+- 智能总结：LLM 生成（已实现）
 
 #### 任务执行情况
-- 基础比例（照片/病历/回访/处方）| mysql | 部分实现（best-effort：按今日到店人数作分母，非严格业务口径）
-- 名单级明细 | mysql | 部分实现（best-effort：仅 `missing_photo_list` 示例，其他名单未接入）
-- 企微触达/对话比例 | wecom API | 缺失
-
-**模板输出字段清单**
-- 回访名单完成情况（名单级表格：人数/完成/比例/到店/开单/消耗）（缺失）
-- 对比照发送完成率 + 未发送名单（部分实现：完成率有，名单缺失）
-- 术后提醒发送完成率 + 未发送名单（缺失）
-- AI 面诊记录生成率 + 明细（部分实现：生成率有，明细缺失）
-- 病历完成比例 + 待完成名单（部分实现：完成比例有，名单缺失）
-- 处方开具比例 + 待完成名单（部分实现：比例有，名单缺失）
-- 群内交接比例 + 未交接名单（缺失）
+- 回访完成率：`task_execution.followup_done_rate`（部分实现）
+- 对比照发送完成率：`task_execution.photo_sent_rate`（部分实现）
+- 术后提醒完成率：缺失
+- AI 面诊记录生成率：`task_execution.ai_record_rate`（部分实现）
+- 病历完成比例：`task_execution.emr_done_rate`（部分实现）
+- 处方开具比例：`task_execution.prescription_rate`（部分实现）
+- 名单级明细（回访/对比照/术后/病历/处方）：大多缺失（仅 `missing_photo_list` 示例）
+- 群内交接比例/对话质量：缺失
 
 #### 明日生意准备
-- 明日预约清单 | mysql | 已实现
-- 明日目标 & 人员排班 | 输入 | 缺失
-
-**模板输出字段清单**
-- 明日业绩目标（开单/消耗）（缺失）
-- 明日预约人数（已实现）
-- 预约分群（VVIP/复购周期内/需开单/需种草/生日福利）（缺失）
-- 当班医生/护士 + 人手风险提示（缺失）
+- 明日预约人数与清单：`appointments_tomorrow`（已实现）
+- 明日业绩目标：缺失
+- 预约分群：缺失
+- 当班医生/护士与人手风险：缺失
 
 #### 接下来几天
-- 专家日 / 7 天目标 / VIP 回店 | 输入 + 规则 | 缺失
-
-**模板输出字段清单**
-- 专家日目标/预约（缺失）
-- 未来 7 天目标与预约量（缺失）
-- 客单差距测算（缺失）
-- 单次客回店邀约（缺失）
-- VIP 维护到店（缺失）
+- 专家日目标/预约：缺失
+- 未来 7 天目标与预约量：缺失
+- 客单差距测算：缺失
+- 单次客回店邀约：缺失
+- VIP 维护到店：缺失
 
 ### 工具清单
 
