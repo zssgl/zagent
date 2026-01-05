@@ -9,6 +9,10 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "agent_risk_summary": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "facts_recap": {
       "type": "object",
       "properties": {

@@ -87,7 +87,9 @@ impl LlmClient {
             .await
             .map_err(|err| err.to_string())?;
         if !response.status().is_success() {
-            return Err(format!("llm status {}", response.status()));
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("llm status {}: {}", status, body));
         }
         let value = response.json::<Value>().await.map_err(|err| err.to_string())?;
         if std::env::var("LLM_DEBUG")
@@ -113,7 +115,7 @@ impl LlmClient {
         let (system, claude_messages) = split_system_messages(messages);
         let body = json!({
             "model": self.config.model,
-            "max_tokens": 64000,
+            "max_tokens": 32000,
             "system": system,
             "messages": claude_messages,
         });
@@ -127,7 +129,9 @@ impl LlmClient {
             .await
             .map_err(|err| err.to_string())?;
         if !response.status().is_success() {
-            return Err(format!("llm status {}", response.status()));
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("llm status {}: {}", status, body));
         }
         let value = response.json::<Value>().await.map_err(|err| err.to_string())?;
         if std::env::var("LLM_DEBUG")

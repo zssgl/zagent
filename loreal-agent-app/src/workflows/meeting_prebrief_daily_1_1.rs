@@ -204,6 +204,9 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
         if let Some(summary) = maybe_generate_llm_summary(&input, &output).await {
             output = attach_agent_summary(output, summary);
         }
+        if let Some(risk_summary) = maybe_generate_llm_risk_summary(&input, &output).await {
+            output = attach_agent_risk_summary(output, risk_summary);
+        }
         let report_md = render_report_md(&input, &output);
         let output = attach_report_md(output, report_md);
         validate_output_schema(&output, &self.output_schema)?;
@@ -428,6 +431,74 @@ async fn maybe_generate_llm_summary(input: &Value, output: &Value) -> Option<Vec
     }
 }
 
+async fn maybe_generate_llm_risk_summary(input: &Value, output: &Value) -> Option<Vec<String>> {
+    let Some(config) = LlmConfig::from_env() else {
+        return None;
+    };
+    let client = LlmClient::new(config);
+    let payload = json!({
+        "facts_recap": output.get("facts_recap"),
+        "risks": output.get("risks"),
+        "checklist": output.get("checklist"),
+        "data_quality": output.get("data_quality"),
+        "input_hint": {
+            "store_id": input.get("store_id"),
+            "biz_date": input.get("biz_date")
+        }
+    });
+    let prompt = format!(
+        "请基于以下 JSON 生成“核心风险提示”要点，仅可引用已提供数据。\n\
+规则：\n\
+1) 严禁编造数字或事实；\n\
+2) 输出 3-6 条风险要点；\n\
+3) 返回 JSON 仅包含 {{\"risks\":[\"...\"]}}。\n\
+数据：{}\n",
+        payload
+    );
+    let messages = vec![
+        LlmMessage {
+            role: "system".to_string(),
+            content: "只返回 JSON。".to_string(),
+        },
+        LlmMessage {
+            role: "user".to_string(),
+            content: prompt,
+        },
+    ];
+    let response = match client.chat_json(&messages).await {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(stage = "llm_risk_summary", error = %err, "llm risk summary failed");
+            return None;
+        }
+    };
+    let risks = match response.get("risks").and_then(|v| v.as_array()) {
+        Some(value) => value,
+        None => {
+            warn!(
+                stage = "llm_risk_summary",
+                response = %response,
+                "llm risk summary missing risks"
+            );
+            return None;
+        }
+    };
+    let mut items = Vec::new();
+    for item in risks.iter().take(6) {
+        if let Some(text) = item.as_str() {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                items.push(trimmed.to_string());
+            }
+        }
+    }
+    if items.is_empty() {
+        None
+    } else {
+        Some(items)
+    }
+}
+
 fn build_metrics(
     input: &Value,
     appointments_count: usize,
@@ -528,6 +599,19 @@ fn attach_agent_summary(mut output: Value, summary: Vec<String>) -> Value {
     if let Value::Object(map) = &mut output {
         map.insert(
             "agent_summary".to_string(),
+            Value::Array(summary.into_iter().map(Value::String).collect()),
+        );
+    }
+    output
+}
+
+fn attach_agent_risk_summary(mut output: Value, summary: Vec<String>) -> Value {
+    if summary.is_empty() {
+        return output;
+    }
+    if let Value::Object(map) = &mut output {
+        map.insert(
+            "agent_risk_summary".to_string(),
             Value::Array(summary.into_iter().map(Value::String).collect()),
         );
     }
@@ -988,11 +1072,6 @@ fn render_report_md(input: &Value, output: &Value) -> String {
     let gmv = number_or_zero(get_value_at_path(facts, "today.gmv"));
     let consumption = number_or_zero(get_value_at_path(facts, "today.consumption"));
     let avg_ticket = number_or_zero(get_value_at_path(facts, "today.avg_ticket"));
-    let gmv_vs_7d = number_or_zero(get_value_at_path(facts, "today.vs_7d.gmv_delta"));
-    let consumption_vs_7d =
-        number_or_zero(get_value_at_path(facts, "today.vs_7d.consumption_delta"));
-    let visits_vs_7d = number_or_zero(get_value_at_path(facts, "today.vs_7d.visits_delta"));
-    let avg_ticket_vs_7d = number_or_zero(get_value_at_path(facts, "today.vs_7d.avg_ticket_delta"));
     let gmv_rate = number_or_zero(get_value_at_path(facts, "mtd.gmv_rate"));
     let consumption_rate = number_or_zero(get_value_at_path(facts, "mtd.consumption_rate"));
     let time_progress = number_or_zero(get_value_at_path(facts, "mtd.time_progress"));
@@ -1033,18 +1112,6 @@ fn render_report_md(input: &Value, output: &Value) -> String {
                 smart_summary.push("消耗完成进度落后于时间进度，关注明日承接与当日消耗转化".to_string());
             }
         }
-        if avg_ticket_vs_7d <= -0.1 {
-            smart_summary.push("客单价低于近7日平均，关注升单/组合项目与高客单顾客推进".to_string());
-        }
-        if visits_vs_7d <= -0.1 {
-            smart_summary.push("到店人数低于近7日平均，关注明日预约承接与当晚邀约补量".to_string());
-        }
-        if gmv_vs_7d >= 0.5 {
-            smart_summary.push("今日开单显著高于近7日平均，关注大客/大单结构与交付承接".to_string());
-        }
-        if consumption_vs_7d >= 0.5 {
-            smart_summary.push("今日消耗显著高于近7日平均，关注疗程交付与复购承接".to_string());
-        }
         if risks.iter().any(|r| r.get("type").and_then(|v| v.as_str()) == Some("touch_gap")) {
             smart_summary.push("触达未回积压偏高，建议在夕会明确二触达 owner 与截止时间".to_string());
         }
@@ -1059,11 +1126,10 @@ fn render_report_md(input: &Value, output: &Value) -> String {
     lines.push(String::new());
 
     lines.push("## 今日经营摘要".to_string());
-    lines.push(format!("- 今日开单：{}（{}）", format_currency(gmv), format_pct_delta(gmv_vs_7d)));
+    lines.push(format!("- 今日开单：{}", format_currency(gmv)));
     lines.push(format!(
-        "- 今日消耗：{}（{}）",
-        format_currency(consumption),
-        format_pct_delta(consumption_vs_7d)
+        "- 今日消耗：{}",
+        format_currency(consumption)
     ));
     let today_appts = number_or_zero(get_value_at_path(input, "his.appointments"));
     let today_deals = number_or_zero(get_value_at_path(input, "his.deals"));
@@ -1076,10 +1142,9 @@ fn render_report_md(input: &Value, output: &Value) -> String {
         ));
     }
     lines.push(format!(
-        "- 今日到店人数：{}；客单价：{}（{}）",
+        "- 今日到店人数：{}；客单价：{}",
         format_int_like(visits),
-        format_currency(avg_ticket),
-        format_pct_delta(avg_ticket_vs_7d)
+        format_currency(avg_ticket)
     ));
     if gmv_rate > 0.0 || consumption_rate > 0.0 {
         lines.push(format!(
@@ -1261,18 +1326,19 @@ fn render_report_md(input: &Value, output: &Value) -> String {
     lines.push(String::new());
 
     lines.push("## 核心风险提示".to_string());
-    if risks.is_empty() {
-        lines.push("- 无明显风险（按当前规则）".to_string());
-    } else {
-        for risk in risks.iter().take(10) {
-            let note = risk.get("note").and_then(|v| v.as_str()).unwrap_or("");
-            let risk_type = risk.get("type").and_then(|v| v.as_str()).unwrap_or("risk");
-            if note.is_empty() {
-                lines.push(format!("- {}", risk_label(risk_type)));
-            } else {
-                lines.push(format!("- {}：{}", risk_label(risk_type), note));
+    let agent_risks = output
+        .get("agent_risk_summary")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if !agent_risks.is_empty() {
+        for item in agent_risks.iter().take(10) {
+            if let Some(text) = item.as_str() {
+                lines.push(format!("- {}", text));
             }
         }
+    } else {
+        lines.push("- 暂无（LLM 未启用或未返回风险提示）".to_string());
     }
     lines.push(String::new());
 
