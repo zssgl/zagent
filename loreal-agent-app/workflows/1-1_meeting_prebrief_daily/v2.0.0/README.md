@@ -12,6 +12,7 @@ Aligned to `../【夕会前】日会数据简报模板.md`, this workflow genera
 - `spec.md`: business goals/boundaries
 - `rules.yml`: risk thresholds + checklist templates
 - `input.schema.json`, `output.schema.json`: contracts
+- `INTEGRATION.md`: integration checklist (client-facing)
 
 ## Run (recommended: single request)
 
