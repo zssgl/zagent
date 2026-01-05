@@ -81,7 +81,7 @@ HIS/预约/企微数据仍为主输入来源，且 `his` 为最小必需。
 
 ## 4. Policy｜规则（硬约束）
 
-- `his` 缺失：流程应视为失败（Facts 无根）
+- `his` 缺失：当未开启 `context.assemble.source=mysql` 时视为失败（Facts 无根）
 - 风险必须可审计：每条风险输出 `threshold` + `evidence_fields` + `note`
 - `checklist` 必须输出 ≥ 3 条（缺少时用 fallback 补齐）
 

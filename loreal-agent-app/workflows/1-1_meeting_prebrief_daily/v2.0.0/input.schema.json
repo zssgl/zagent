@@ -180,5 +180,5 @@
       }
     }
   },
-  "required": ["store_id", "biz_date", "his"]
+  "required": ["store_id", "biz_date"]
 }

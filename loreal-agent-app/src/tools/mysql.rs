@@ -3,6 +3,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use sqlx::{MySqlPool, Row};
+use tracing::{info, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MysqlAssembleError {
@@ -53,6 +54,7 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
 
     let store_id = string_field(minimal_input, "store_id")
         .ok_or_else(|| MysqlAssembleError::InvalidInput("missing store_id".into()))?;
+    info!(stage = "assemble_mysql", %store_id, %biz_date, "mysql assembly start");
     let store_name = match string_field(minimal_input, "store_name") {
         Some(name) => name,
         None => {
@@ -61,7 +63,11 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
                 .fetch_optional(pool)
                 .await
                 .map_err(|err| MysqlAssembleError::Db(err.to_string()))?;
-            name.unwrap_or_else(|| store_id.clone())
+            let name = name.unwrap_or_else(|| store_id.clone());
+            if name == store_id {
+                warn!(stage = "assemble_mysql", %store_id, "store_name missing in clinics; using store_id");
+            }
+            name
         }
     };
     let cutoff_time =
@@ -110,6 +116,13 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
     } else {
         0.0
     };
+    info!(
+        stage = "assemble_mysql",
+        today_gmv,
+        today_visits,
+        today_avg_ticket,
+        "today facts computed"
+    );
 
     // Top items (today) from bill operation record items.
     let top_item_rows = sqlx::query(
@@ -185,6 +198,11 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
             "is_first_visit": false
         }));
     }
+    info!(
+        stage = "assemble_mysql",
+        tomorrow_appointments = appointments_tomorrow.len(),
+        "tomorrow appointments assembled"
+    );
 
     // ---------- Baselines (rolling 7d avg) ----------
     let baseline_start = (biz_date - Duration::days(7))
@@ -285,6 +303,7 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
 
     let (staff_today_rows, staff_mtd_rows) = if staff_today_rows.is_empty() && staff_mtd_rows.is_empty()
     {
+        info!(stage = "assemble_mysql", "staff stats empty; fallback to CreateEmpId");
         let fallback_today_rows = sqlx::query(
             "SELECT COALESCE(e.EmpName, b.CreateEmpId) AS staff_name, COALESCE(SUM(b.PayAmount), 0) AS today_gmv \
              FROM bills b \
@@ -363,6 +382,11 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
             Value::Object(obj)
         })
         .collect::<Vec<_>>();
+    info!(
+        stage = "assemble_mysql",
+        staff_stats = staff_stats.len(),
+        "staff stats assembled"
+    );
 
     // ---------- Customer summary (new vs old, based on first bill date in this clinic) ----------
     let first_bill_rows = sqlx::query(
@@ -537,6 +561,11 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
             "wow_consumption": 0.0
         }));
     }
+    info!(
+        stage = "assemble_mysql",
+        key_items_mtd = key_items_mtd.len(),
+        "key items assembled"
+    );
 
     // ---------- Task execution (best-effort) ----------
     let photos_customers: i64 = sqlx::query_scalar(
@@ -622,6 +651,11 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
             "item": ""
         }));
     }
+    info!(
+        stage = "assemble_mysql",
+        missing_photo_list = missing_photo_list.len(),
+        "task execution assembled"
+    );
 
     let denom = if today_visits > 0.0 { today_visits } else { 0.0 };
     let photo_sent_rate = if denom > 0.0 {
