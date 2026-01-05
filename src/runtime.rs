@@ -14,10 +14,57 @@ use sha2::Digest;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
-    #[error("retryable: {0}")]
-    Retryable(String),
-    #[error("fatal: {0}")]
-    Fatal(String),
+    #[error("retryable: {message}")]
+    Retryable {
+        message: String,
+        details: Option<Value>,
+    },
+    #[error("fatal: {message}")]
+    Fatal {
+        message: String,
+        details: Option<Value>,
+    },
+}
+
+impl AgentError {
+    pub fn fatal(message: impl Into<String>) -> Self {
+        Self::Fatal {
+            message: message.into(),
+            details: None,
+        }
+    }
+
+    pub fn fatal_with_details(message: impl Into<String>, details: Value) -> Self {
+        Self::Fatal {
+            message: message.into(),
+            details: Some(details),
+        }
+    }
+
+    pub fn retryable(message: impl Into<String>) -> Self {
+        Self::Retryable {
+            message: message.into(),
+            details: None,
+        }
+    }
+
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Retryable { message, .. } => message,
+            Self::Fatal { message, .. } => message,
+        }
+    }
+
+    pub fn details(&self) -> Option<&Value> {
+        match self {
+            Self::Retryable { details, .. } => details.as_ref(),
+            Self::Fatal { details, .. } => details.as_ref(),
+        }
+    }
+
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, Self::Retryable { .. })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -276,9 +323,9 @@ impl InMemoryRuntime {
                 let finished_at = Utc::now();
                 let error = ErrorResponse {
                     code: "workflow_error".to_string(),
-                    message: err.to_string(),
-                    retryable: matches!(err, AgentError::Retryable(_)),
-                    details: None,
+                    message: err.message().to_string(),
+                    retryable: err.is_retryable(),
+                    details: err.details().cloned(),
                 };
                 self.update_run_failure(&run_id, error, started_at, finished_at)
                     .await;

@@ -6,6 +6,7 @@ last_updated: 2026-01-04
 delivery_channel: wecom
 run_timezone: Asia/Shanghai
 spec: spec.md
+workflow_dag: workflow.dag.yml
 input_schema: input.schema.json
 output_schema: output.schema.json
 thresholds: ../../../configs/meeting_prebrief_thresholds.yml

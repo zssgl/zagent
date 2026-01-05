@@ -40,7 +40,7 @@ impl WorkflowRunner for ConversationWorkflow {
 
     async fn run(&self, input: Value) -> Result<WorkflowOutput, AgentError> {
         let parsed: ConversationInput =
-            serde_json::from_value(input).map_err(|err| AgentError::Fatal(err.to_string()))?;
+            serde_json::from_value(input).map_err(|err| AgentError::fatal(err.to_string()))?;
 
         let conversation_id = parsed
             .conversation_id
@@ -61,14 +61,13 @@ impl WorkflowRunner for ConversationWorkflow {
             .collect();
         history.append(&mut new_messages);
 
-        let config = LlmConfig::from_env().ok_or_else(|| {
-            AgentError::Fatal("LLM is not enabled; set LLM_ENABLED=1".to_string())
-        })?;
+        let config = LlmConfig::from_env()
+            .ok_or_else(|| AgentError::fatal("LLM is not enabled; set LLM_ENABLED=1"))?;
         let client = LlmClient::new(config);
         let reply = client
             .chat(&history)
             .await
-            .map_err(|err| AgentError::Retryable(format!("llm error: {}", err)))?;
+            .map_err(|err| AgentError::retryable(format!("llm error: {}", err)))?;
 
         history.push(LlmMessage {
             role: "assistant".to_string(),

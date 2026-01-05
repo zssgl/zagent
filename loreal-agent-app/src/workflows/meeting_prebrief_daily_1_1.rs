@@ -211,7 +211,7 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
             .unwrap_or("");
         persist_report_md(report_md, biz_date)
             .await
-            .map_err(|err| AgentError::Fatal(err))?;
+            .map_err(AgentError::fatal)?;
 
         Ok(WorkflowOutput {
             output,
@@ -255,22 +255,38 @@ fn validate_input_completeness(input: &Value) -> Result<(), AgentError> {
     }
 
     if missing.is_empty() {
-        Ok(())
-    } else {
-        Err(AgentError::Fatal(format!(
-            "missing required fields: {}",
-            missing.join(", ")
-        )))
+        return Ok(());
     }
+
+    let details = json!({
+        "kind": "missing_required_fields",
+        "missing_fields": missing,
+        "missing_info_list": missing.iter().map(|field| {
+            json!({
+                "path": field,
+                "reason": "required"
+            })
+        }).collect::<Vec<Value>>()
+    });
+    Err(AgentError::fatal_with_details(
+        "missing required fields",
+        details,
+    ))
 }
 
 fn validate_output_schema(output: &Value, schema: &JSONSchema) -> Result<(), AgentError> {
     if let Err(errors) = schema.validate(output) {
-        let messages: Vec<String> = errors.map(|err| err.to_string()).collect();
-        return Err(AgentError::Fatal(format!(
-            "output schema validation failed: {}",
-            messages.join("; ")
-        )));
+        let mapped: Vec<Value> = errors
+            .map(|err| json!({ "message": err.to_string() }))
+            .collect();
+        let details = json!({
+            "kind": "output_schema_validation",
+            "errors": mapped
+        });
+        return Err(AgentError::fatal_with_details(
+            "output schema validation failed",
+            details,
+        ));
     }
     Ok(())
 }
@@ -282,15 +298,15 @@ async fn normalize_input(
 ) -> Result<Value, AgentError> {
     if plan.use_mysql_assembly {
         let Some(pool) = tools.mysql() else {
-            return Err(AgentError::Fatal(
-                "mysql not configured (DATABASE_URL missing or connection failed)".to_string(),
+            return Err(AgentError::fatal(
+                "mysql not configured (DATABASE_URL missing or connection failed)",
             ));
         };
         let assembled = assemble_meeting_prebrief_daily_1_1_mysql(pool, &input)
             .await
             .map_err(|err| match err {
-                MysqlAssembleError::InvalidInput(message) => AgentError::Fatal(message),
-                MysqlAssembleError::Db(message) => AgentError::Retryable(message),
+                MysqlAssembleError::InvalidInput(message) => AgentError::fatal(message),
+                MysqlAssembleError::Db(message) => AgentError::retryable(message),
             })?;
         let mut merged = assembled;
         merge_json(&mut merged, &input);

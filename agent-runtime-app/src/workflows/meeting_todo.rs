@@ -29,7 +29,7 @@ impl WorkflowRunner for MeetingTodoWorkflow {
             match LlmClient::new(config).extract_todos(summary_text).await {
                 Ok(value) => value,
                 Err(err) => {
-                    return Err(AgentError::Retryable(format!("llm error: {}", err)));
+                    return Err(AgentError::retryable(format!("llm error: {}", err)));
                 }
             }
         } else {

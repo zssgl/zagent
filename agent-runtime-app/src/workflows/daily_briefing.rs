@@ -40,20 +40,20 @@ impl WorkflowRunner for DailyBriefingWorkflow {
 
     async fn run(&self, input: Value) -> Result<WorkflowOutput, AgentError> {
         let parsed: DailyBriefingInput =
-            serde_json::from_value(input).map_err(|err| AgentError::Fatal(err.to_string()))?;
+            serde_json::from_value(input).map_err(|err| AgentError::fatal(err.to_string()))?;
 
         let category = parsed
             .category
             .unwrap_or_else(|| "daily".to_string())
             .to_ascii_lowercase();
         if category == "weekly" {
-            return Err(AgentError::Fatal(
-                "weekly category is not supported yet".to_string(),
+            return Err(AgentError::fatal(
+                "weekly category is not supported yet",
             ));
         }
         if category != "daily" {
-            return Err(AgentError::Fatal(
-                "category must be daily or weekly".to_string(),
+            return Err(AgentError::fatal(
+                "category must be daily or weekly",
             ));
         }
 
@@ -64,13 +64,13 @@ impl WorkflowRunner for DailyBriefingWorkflow {
             .unwrap_or_else(|| Utc::now().date_naive());
         let start = date
             .and_hms_opt(0, 0, 0)
-            .ok_or_else(|| AgentError::Fatal("invalid date".to_string()))?;
+            .ok_or_else(|| AgentError::fatal("invalid date"))?;
         let end = start + Duration::days(1);
 
         let tomorrow = date + Duration::days(1);
         let tomorrow_start = tomorrow
             .and_hms_opt(0, 0, 0)
-            .ok_or_else(|| AgentError::Fatal("invalid date".to_string()))?;
+            .ok_or_else(|| AgentError::fatal("invalid date"))?;
         let tomorrow_end = tomorrow_start + Duration::days(1);
 
         let operation_count: i64 = sqlx::query_scalar(
@@ -80,7 +80,7 @@ impl WorkflowRunner for DailyBriefingWorkflow {
         .bind(end)
         .fetch_one(&self.db)
         .await
-        .map_err(|err| AgentError::Retryable(format!("db error: {}", err)))?;
+        .map_err(|err| AgentError::retryable(format!("db error: {}", err)))?;
 
         let payment_total: Decimal = sqlx::query_scalar(
             "SELECT COALESCE(SUM(p.Amount), 0) \
@@ -92,7 +92,7 @@ impl WorkflowRunner for DailyBriefingWorkflow {
         .bind(end)
         .fetch_one(&self.db)
         .await
-        .map_err(|err| AgentError::Retryable(format!("db error: {}", err)))?;
+        .map_err(|err| AgentError::retryable(format!("db error: {}", err)))?;
         let payment_total = payment_total.to_f64().unwrap_or(0.0);
 
         let appointment_count: i64 = sqlx::query_scalar(
@@ -103,7 +103,7 @@ impl WorkflowRunner for DailyBriefingWorkflow {
         .bind(end)
         .fetch_one(&self.db)
         .await
-        .map_err(|err| AgentError::Retryable(format!("db error: {}", err)))?;
+        .map_err(|err| AgentError::retryable(format!("db error: {}", err)))?;
 
         let return_visit_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM returnvisits \
@@ -113,7 +113,7 @@ impl WorkflowRunner for DailyBriefingWorkflow {
         .bind(end)
         .fetch_one(&self.db)
         .await
-        .map_err(|err| AgentError::Retryable(format!("db error: {}", err)))?;
+        .map_err(|err| AgentError::retryable(format!("db error: {}", err)))?;
 
         let wecom_trace_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM customer_trace \
@@ -122,7 +122,7 @@ impl WorkflowRunner for DailyBriefingWorkflow {
         .bind(date)
         .fetch_one(&self.db)
         .await
-        .map_err(|err| AgentError::Retryable(format!("db error: {}", err)))?;
+        .map_err(|err| AgentError::retryable(format!("db error: {}", err)))?;
 
         let appointment_rows = sqlx::query(
             "SELECT CustomerName, StartTime, DoctorName, ConsultantName \
@@ -134,7 +134,7 @@ impl WorkflowRunner for DailyBriefingWorkflow {
         .bind(tomorrow_end)
         .fetch_all(&self.db)
         .await
-        .map_err(|err| AgentError::Retryable(format!("db error: {}", err)))?;
+        .map_err(|err| AgentError::retryable(format!("db error: {}", err)))?;
 
         let mut tomorrow_list = Vec::new();
         for row in appointment_rows {
@@ -209,11 +209,11 @@ impl WorkflowRunner for DailyBriefingWorkflow {
         let report_dir = "reports";
         fs::create_dir_all(report_dir)
             .await
-            .map_err(|err| AgentError::Fatal(format!("create report dir: {}", err)))?;
+            .map_err(|err| AgentError::fatal(format!("create report dir: {}", err)))?;
         let report_path = format!("{}/briefing_{}.md", report_dir, date.format("%Y%m%d"));
         fs::write(&report_path, report_md.as_bytes())
             .await
-            .map_err(|err| AgentError::Fatal(format!("write report: {}", err)))?;
+            .map_err(|err| AgentError::fatal(format!("write report: {}", err)))?;
 
         let output = json!({
             "date": date.format("%Y-%m-%d").to_string(),
@@ -413,5 +413,5 @@ Checklist JSON: {}\n",
     client
         .chat(&messages)
         .await
-        .map_err(|err| AgentError::Retryable(format!("llm error: {}", err)))
+        .map_err(|err| AgentError::retryable(format!("llm error: {}", err)))
 }
