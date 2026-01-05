@@ -44,6 +44,25 @@ run_timezone: Asia/Shanghai
 
 ---
 
+## 2.1 Workflow States｜工作流状态机（无 AI 可跑）
+
+| State | Description | Input | Output | Agent Involved |
+| --- | --- | --- | --- | --- |
+| S0 | Request Received | Raw Input | RawRequest | No |
+| S1 | Normalization | RawRequest | NormalizedRequest | No |
+| S2 | Completeness Check | NormalizedRequest | CompleteRequest / MissingInfoList | No |
+| S3A | Missing Info Handling | MissingInfoList | ClarificationRequest | Optional (language only) |
+| S3B | Execution Planning | CompleteRequest | ExecutionPlan | Optional (plan selection only) |
+| S4 | Execution | ExecutionPlan | RawResult | No |
+| S5 | Result Validation | RawResult | FinalResult / Error | No (LLM output must pass validation) |
+| S6 | Delivery & Logging | FinalResult | Delivered + Audit Trail | No |
+
+说明：
+- LLM 仅可参与 S3A/S3B 的“措辞或方案选择”，不得越权执行或改写事实数据。
+- 关键硬约束（schema 校验/风控/成本/执行权限）全部在非 LLM 步骤完成。
+
+---
+
 ## 3. Input Contract｜输入契约（v2 增量）
 
 在 v1 的基础上，新增/扩展了以下可选输入（缺失不影响主流程）：
@@ -66,3 +85,19 @@ HIS/预约/企微数据仍为主输入来源，且 `his` 为最小必需。
 - 风险必须可审计：每条风险输出 `threshold` + `evidence_fields` + `note`
 - `checklist` 必须输出 ≥ 3 条（缺少时用 fallback 补齐）
 
+---
+
+## 5. Agent Policy Summary｜Agent 使用边界（甲方版）
+
+Agent **不具备**：
+- 自主执行权限
+- 绕过校验能力
+- 编造数字/口径的能力
+
+Agent **仅用于**：
+- 澄清问题的自然语言表达（S3A）
+- 多方案中选择“性价比更高”的执行计划建议（S3B）
+
+所有 Agent 输出必须通过：
+- Schema validation
+- Risk policy check（与 `rules.yml` 一致）

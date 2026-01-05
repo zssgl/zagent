@@ -18,6 +18,24 @@
 6. **渲染简报**：生成 `report_md`（对齐 `../【夕会前】日会数据简报模板.md` 的段落结构）
 7. **持久化**：保存到 `reports/briefing_YYYYMMDD.md`
 
+## Workflow 状态机（甲方版）
+
+| State | Description | Input | Output | Agent Involved |
+| --- | --- | --- | --- | --- |
+| S0 | Request Received | Raw Input | RawRequest | No |
+| S1 | Normalization | RawRequest | NormalizedRequest | No |
+| S2 | Completeness Check | NormalizedRequest | CompleteRequest / MissingInfoList | No |
+| S3A | Missing Info Handling | MissingInfoList | ClarificationRequest | Optional (language only) |
+| S3B | Execution Planning | CompleteRequest | ExecutionPlan | Optional (plan selection only) |
+| S4 | Execution | ExecutionPlan | RawResult | No |
+| S5 | Result Validation | RawResult | FinalResult / Error | No (LLM output must pass validation) |
+| S6 | Delivery & Logging | FinalResult | Delivered + Audit Trail | No |
+
+Agent policy 简述：
+- Agent 不具备自主执行、绕过校验、编造数字权限
+- 仅用于澄清语言表达或方案选择建议
+- 产出必须经 schema 校验与风险规则检查
+
 ## 需要的数据（输入契约）
 
 ### 最小输入（推荐）
