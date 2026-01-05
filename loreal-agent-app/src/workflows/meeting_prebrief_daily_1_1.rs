@@ -148,13 +148,6 @@ pub struct MeetingPrebriefDaily1_1Runner {
 
 struct ExecutionPlan {
     use_mysql_assembly: bool,
-    plan_id: Option<String>,
-}
-
-struct PlanCandidate {
-    id: String,
-    use_mysql_assembly: bool,
-    note: Option<String>,
 }
 
 impl MeetingPrebriefDaily1_1Runner {
@@ -204,10 +197,7 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
 
     async fn run(&self, input: Value) -> Result<WorkflowOutput, AgentError> {
         info!(workflow = "meeting_prebrief_daily", stage = "start", "run started");
-        let plan = select_execution_plan(&input).await;
-        if let Some(plan_id) = plan.plan_id.as_deref() {
-            info!(workflow = "meeting_prebrief_daily", stage = "plan_selected", plan_id);
-        }
+        let plan = build_execution_plan();
         let input = normalize_input(input, &plan, &self.tools).await?;
         validate_input_completeness(&input)?;
         let mut output = execute_workflow(&input, &self.rules, &self.thresholds);
@@ -236,115 +226,10 @@ impl WorkflowRunner for MeetingPrebriefDaily1_1Runner {
     }
 }
 
-async fn select_execution_plan(input: &Value) -> ExecutionPlan {
-    let default_plan = build_execution_plan(input);
-    let Some(candidates) = parse_plan_candidates(input.get("__context")) else {
-        return default_plan;
-    };
-    if candidates.is_empty() {
-        return default_plan;
-    }
-
-    let Some(config) = LlmConfig::from_env() else {
-        info!(stage = "plan_select", reason = "llm_disabled", "llm plan selection skipped");
-        return pick_candidate_fallback(default_plan, &candidates);
-    };
-    let client = LlmClient::new(config);
-    let input_hint = json!({
-        "has_his": input.get("his").is_some(),
-        "store_id": input.get("store_id").and_then(|v| v.as_str()),
-        "biz_date": input.get("biz_date").and_then(|v| v.as_str()),
-        "context": input.get("__context").cloned().unwrap_or(Value::Null)
-    });
-    let payload = json!({
-        "candidates": candidates.iter().map(|c| {
-            json!({
-                "id": c.id,
-                "use_mysql_assembly": c.use_mysql_assembly,
-                "note": c.note
-            })
-        }).collect::<Vec<Value>>(),
-        "input_hint": input_hint
-    });
-    let prompt = format!(
-        "You are selecting a workflow execution plan.\n\
-Return JSON only: {{\"plan_id\":\"...\"}}.\n\
-Choose one plan_id from candidates, no extra keys.\n\
-Payload JSON: {}\n",
-        payload
-    );
-    let messages = vec![
-        LlmMessage {
-            role: "system".to_string(),
-            content: "Return JSON only.".to_string(),
-        },
-        LlmMessage {
-            role: "user".to_string(),
-            content: prompt,
-        },
-    ];
-    let Ok(response) = client.chat_json(&messages).await else {
-        warn!(stage = "plan_select", "llm plan selection failed; fallback");
-        return pick_candidate_fallback(default_plan, &candidates);
-    };
-    let Some(plan_id) = response.get("plan_id").and_then(|v| v.as_str()) else {
-        warn!(stage = "plan_select", "llm plan selection missing plan_id; fallback");
-        return pick_candidate_fallback(default_plan, &candidates);
-    };
-    if let Some(candidate) = candidates.iter().find(|c| c.id == plan_id) {
-        return ExecutionPlan {
-            use_mysql_assembly: candidate.use_mysql_assembly,
-            plan_id: Some(candidate.id.clone()),
-        };
-    }
-    pick_candidate_fallback(default_plan, &candidates)
-}
-
-fn build_execution_plan(input: &Value) -> ExecutionPlan {
+fn build_execution_plan() -> ExecutionPlan {
     ExecutionPlan {
-        use_mysql_assembly: wants_mysql_assembly(input.get("__context")),
-        plan_id: None,
+        use_mysql_assembly: true,
     }
-}
-
-fn pick_candidate_fallback(default_plan: ExecutionPlan, candidates: &[PlanCandidate]) -> ExecutionPlan {
-    if let Some(candidate) = candidates
-        .iter()
-        .find(|c| c.use_mysql_assembly == default_plan.use_mysql_assembly)
-    {
-        return ExecutionPlan {
-            use_mysql_assembly: candidate.use_mysql_assembly,
-            plan_id: Some(candidate.id.clone()),
-        };
-    }
-    default_plan
-}
-
-fn parse_plan_candidates(context: Option<&Value>) -> Option<Vec<PlanCandidate>> {
-    let Some(context) = context else {
-        return None;
-    };
-    let list = context.get("plan_candidates")?.as_array()?;
-    let mut candidates = Vec::new();
-    for item in list {
-        let Some(obj) = item.as_object() else {
-            continue;
-        };
-        let Some(id) = obj.get("id").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let use_mysql_assembly = obj
-            .get("use_mysql_assembly")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let note = obj.get("note").and_then(|v| v.as_str()).map(|v| v.to_string());
-        candidates.push(PlanCandidate {
-            id: id.to_string(),
-            use_mysql_assembly,
-            note,
-        });
-    }
-    Some(candidates)
 }
 
 fn validate_input_completeness(input: &Value) -> Result<(), AgentError> {
@@ -647,20 +532,6 @@ fn attach_agent_summary(mut output: Value, summary: Vec<String>) -> Value {
         );
     }
     output
-}
-
-fn wants_mysql_assembly(context: Option<&Value>) -> bool {
-    let Some(context) = context else {
-        return false;
-    };
-    match context.get("assemble") {
-        Some(Value::Bool(true)) => true,
-        Some(Value::Object(map)) => map
-            .get("source")
-            .and_then(|v| v.as_str())
-            .is_some_and(|v| v.eq_ignore_ascii_case("mysql")),
-        _ => false,
-    }
 }
 
 async fn persist_report_md(report_md: &str, biz_date: &str) -> Result<(), String> {

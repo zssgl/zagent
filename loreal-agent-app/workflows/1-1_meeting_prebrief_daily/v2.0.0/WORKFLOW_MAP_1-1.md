@@ -5,6 +5,7 @@
 ### 说明
 - 状态：`已实现`（available）、`部分实现`（partial）、`缺失`（missing）
 - 数据来源：`输入`（调用方提供）、`mysql`（装配）、`规则`（派生）、`llm`（可选）
+- `部分实现`/“best-effort”的含义：会尽力从现有表聚合，但**口径不完整、字段可能缺失、缺失时会返回 0/空数组，不会报错**。
 
 ### 输入
 
@@ -23,19 +24,18 @@
 - 其它结构化字段：`staff_stats`, `customer_summary`, `key_items_mtd`, `task_execution`
 
 **上下文（context）**
-- `context.assemble.source=mysql`：启用 MySQL 装配
-- `context.plan_candidates[]`：候选执行计划（LLM 可选）
+- 默认启用 MySQL 装配（不再需要传 `context.assemble.source`）
 
 ### 步骤地图
 
 | 步骤 | 描述 | 输入（关键字段） | 数据来源 | 工具 | 输出 | 状态 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | S0 请求接收 | 接收原始 input + context | `input`, `context` | 输入 | 无 | `raw_request` | 已实现 | 入口。 |
-| S1 规范化 | MySQL 装配 + input 覆盖合并，剥离 context | `context.assemble.source`, raw input | mysql + 输入 | MySQL | `normalized_request` | 已实现 | 开启装配时使用。 |
-| S2 完整性检查 | 校验必填字段 | `store_id`, `biz_date`, `his.*` | 输入或 mysql | 无 | `complete_request` / `missing_info_list` | 已实现 | 未开启装配时 `his` 必填。 |
+| S1 规范化 | MySQL 装配 + input 覆盖合并，剥离 context | raw input | mysql + 输入 | MySQL | `normalized_request` | 已实现 | 默认装配。 |
+| S2 完整性检查 | 校验必填字段 | `store_id`, `biz_date`, `his.*` | 输入或 mysql | 无 | `complete_request` / `missing_info_list` | 已实现 | `his` 由装配补齐，调用方可不传。 |
 | S3A 缺失信息处理 | 生成澄清请求（可选） | `missing_info_list` | 规则 | 无 | `clarification_request` | 缺失 | 暂无显式输出。 |
-| S3B 执行规划 | 选择执行计划 | `context.plan_candidates` | 输入 + llm | LLM（可选） | `execution_plan` | 已实现 | 无 LLM 时回退确定性方案。 |
 | S4 执行 | 计算 facts/risks/checklist | `his`, `baselines`, `mtd`, `appointments_tomorrow`, `wecom_touch`, `staff_stats`, `customer_summary`, `key_items_mtd`, `task_execution` | mysql + 输入 + 规则 | MySQL | `raw_result` | 已实现 | 多字段为 best-effort。 |
+| S4.5 智能总结 | 基于 facts/risks/checklist 生成总结要点 | `facts_recap`, `risks`, `checklist` | 规则 + llm | LLM（可选） | `agent_summary` | 已实现 | LLM 失败时回退规则总结。 |
 | S5 结果校验 | 输出 schema 校验 | output JSON | 规则 | JSON Schema | `final_result` / `error` | 已实现 | 不通过直接失败。 |
 | S6 交付与落盘 | 渲染报告 + 持久化 | `report_md`, `biz_date` | 规则 | 文件系统 | `delivered` | 已实现 | 写入 `reports/`。 |
 
@@ -53,7 +53,7 @@
 
 #### 今日经营摘要
 - `his.gmv`, `his.consumption`, `his.visits`, `his.avg_ticket` | mysql | 已实现
-- `his.appointments`, `his.deals` | mysql | 部分实现（best-effort）
+- `his.appointments`, `his.deals` | mysql | 部分实现（best-effort：预约数来自 `appointments`；成交人数目前用当天有账单的 distinct 客户近似）
 - 7D 对比（`baselines.rolling_7d.*`）| mysql | 已实现
 - 月度累计（`mtd.gmv`, `mtd.consumption`, `mtd.time_progress`）| mysql | 已实现
 - 月度目标（`mtd.*_target`）| 输入 | 部分实现（需调用方提供）
@@ -63,25 +63,25 @@
 - LLM 总结 | llm | 已实现（可选）
 
 #### 各健康管理人完成情况
-- `staff_stats`（今日/MTD gmv）| mysql | 已实现（best-effort）
+- `staff_stats`（今日/MTD gmv）| mysql | 已实现（best-effort：优先 `billemployees`，为空则 fallback `bills.CreateEmpId`，无员工归属规则）
 - R12 回购率 | mysql | 缺失（占位）
 - 目标达成 | 输入 | 缺失
 
 #### 顾客摘要
 - 新/老客人数 + GMV | mysql | 已实现
-- 新客来源 | mysql | 已实现（best-effort）
-- 单项目顾客 | mysql | 部分实现（best-effort）
-- VIP 顾客 | mysql | 部分实现（best-effort）
+- 新客来源 | mysql | 已实现（best-effort：仅输出 `customers.LaiYuanID -> customdictionary.DisplayName`，未做业务渠道映射）
+- 单项目顾客 | mysql | 部分实现（best-effort：按近 12 个月 `billoperationrecorditems.ItemName` 去重计数，未排除促销/同义项目）
+- VIP 顾客 | mysql | 部分实现（best-effort：`customer_level_historys.new_level LIKE '%VIP%'`，无法区分 VVIP）
 - 老带新/美丽基金核验 | mysql | 缺失
 
 #### 关键品项完成（本月至今）
-- 关键品项 + MTD GMV | mysql | 已实现
+- 关键品项 + MTD GMV | mysql | 已实现（best-effort：按 `billoperationrecorditems` 汇总，不做品项口径清洗）
 - WOW/同期对比 | 规则 | 缺失
 - 扫码购 | 外部 API | 缺失
 
 #### 任务执行情况
-- 基础比例（照片/病历/回访/处方）| mysql | 部分实现
-- 名单级明细 | mysql | 部分实现（多数缺失）
+- 基础比例（照片/病历/回访/处方）| mysql | 部分实现（best-effort：按今日到店人数作分母，非严格业务口径）
+- 名单级明细 | mysql | 部分实现（best-effort：仅 `missing_photo_list` 示例，其他名单未接入）
 - 企微触达/对话比例 | wecom API | 缺失
 
 #### 明日生意准备
