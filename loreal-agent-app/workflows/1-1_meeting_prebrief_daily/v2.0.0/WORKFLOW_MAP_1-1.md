@@ -44,6 +44,7 @@
 **结构化输出（JSON）**
 - `facts_recap`, `tomorrow_list`, `risks`, `checklist`, `data_quality`
 - 可选：`agent_summary`
+- 可选：`agent_risk_summary`, `agent_staff_summary`, `agent_customer_summary`, `agent_key_items_summary`
 
 **人类可读输出**
 - `report_md`（Markdown 报告）
@@ -81,6 +82,8 @@
 - `staff_stats`（今日/MTD gmv）| mysql | 已实现（best-effort：优先 `billemployees`，为空则 fallback `bills.CreateEmpId`，无员工归属规则）
 - R12 回购率 | mysql | 缺失（占位）
 - 目标达成 | 输入 | 缺失
+**智能总结（LLM）**
+- 输出：`agent_staff_summary`（写入 JSON 与 report）
 
 #### 顾客摘要
 - 新/老客人数 + GMV | mysql | 已实现
@@ -88,11 +91,15 @@
 - 单项目顾客 | mysql | 部分实现（best-effort：按近 12 个月 `billoperationrecorditems.ItemName` 去重计数，未排除促销/同义项目）
 - VIP 顾客 | mysql | 部分实现（best-effort：`customer_level_historys.new_level LIKE '%VIP%'`，无法区分 VVIP）
 - 老带新/美丽基金核验 | mysql | 缺失
+**智能总结（LLM）**
+- 输出：`agent_customer_summary`（写入 JSON 与 report）
 
 #### 关键品项完成（本月至今）
 - 关键品项 + MTD GMV | mysql | 已实现（best-effort：按 `billoperationrecorditems` 汇总，不做品项口径清洗）
 - WOW/同期对比 | 规则 | 缺失
 - 扫码购 | 外部 API | 缺失
+**智能总结（LLM）**
+- 输出：`agent_key_items_summary`（写入 JSON 与 report）
 
 #### 任务执行情况
 - 基础比例（照片/病历/回访/处方）| mysql | 部分实现（best-effort：按今日到店人数作分母，非严格业务口径）
