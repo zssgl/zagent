@@ -11,6 +11,7 @@ Aligned to `../【夕会前】日会数据简报模板.md`, this workflow genera
 - `workflow.yml`: workflow metadata
 - `spec.md`: business goals/boundaries
 - `workflow.dag.yml`: serialized DAG/state-machine definition
+- `WORKFLOW_MAP_1-1.md`: workflow steps, data needs, tools, and gaps
 - `rules.yml`: risk thresholds + checklist templates
 - `input.schema.json`, `output.schema.json`: contracts
 - `INTEGRATION.md`: integration checklist (client-facing)
