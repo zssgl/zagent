@@ -3,6 +3,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use sqlx::{MySqlPool, Row};
+use std::collections::HashMap;
 use tracing::{info, warn};
 
 #[derive(Debug, thiserror::Error)]
@@ -153,7 +154,7 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
 
     // ---------- Tomorrow appointments ----------
     let today_appointments_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM appointments \
+        "SELECT COUNT(DISTINCT CustomerId) FROM appointments \
          WHERE OrginizationId = ? AND StartTime >= ? AND StartTime < ? AND IsDelete = 0",
     )
     .bind(&store_id)
@@ -164,11 +165,15 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
     .map_err(|err| MysqlAssembleError::Db(err.to_string()))?;
 
     let appointment_rows = sqlx::query(
-        "SELECT a.CustomerId, a.CustomerName, a.StartTime, a.DoctorName, a.ConsultantName, l.ItemName \
+        "SELECT a.ID AS appointment_id, a.CustomerId, a.CustomerName, a.StartTime, \
+                a.DoctorName, a.ConsultantName, \
+                GROUP_CONCAT(DISTINCT l.ItemName ORDER BY l.ItemName SEPARATOR '、') AS item_names \
          FROM appointments a \
          LEFT JOIN appointmentlines l ON l.AppoinmentId = a.ID \
          WHERE a.OrginizationId = ? AND a.StartTime >= ? AND a.StartTime < ? AND a.IsDelete = 0 \
-         ORDER BY a.StartTime LIMIT 20",
+         GROUP BY a.ID, a.CustomerId, a.CustomerName, a.StartTime, a.DoctorName, a.ConsultantName \
+         ORDER BY a.StartTime \
+         LIMIT 20",
     )
     .bind(&store_id)
     .bind(tomorrow_start)
@@ -183,7 +188,7 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
         let start_time: Option<NaiveDateTime> = row.try_get("StartTime").ok().flatten();
         let doctor: Option<String> = row.try_get("DoctorName").ok().flatten();
         let consultant: Option<String> = row.try_get("ConsultantName").ok().flatten();
-        let item_name: Option<String> = row.try_get("ItemName").ok().flatten();
+        let item_name: Option<String> = row.try_get("item_names").ok().flatten();
 
         let staff_id = consultant
             .clone()
@@ -339,8 +344,94 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
         (staff_today_rows, staff_mtd_rows)
     };
 
-    let mut staff_map: std::collections::HashMap<String, serde_json::Map<String, Value>> =
-        std::collections::HashMap::new();
+    let mut r12_by_staff: HashMap<String, f64> = HashMap::new();
+    let r12_rows = sqlx::query(
+        "SELECT COALESCE(e.EmpName, be.EmpId) AS staff_name, \
+                COUNT(DISTINCT CASE WHEN d.day_count >= 2 THEN d.customer_id END) AS repurchase_customers, \
+                COUNT(DISTINCT d.customer_id) AS eligible_customers \
+         FROM ( \
+           SELECT b.Customer_ID AS customer_id, COALESCE(e.EmpName, be.EmpId) AS staff_name, \
+                  COUNT(DISTINCT DATE(b.CreateTime)) AS day_count \
+           FROM bills b \
+           JOIN billemployees be ON be.BillId = b.ID \
+           LEFT JOIN employees e ON e.ID = be.EmpId \
+           WHERE b.ClinicId = ? \
+             AND b.CreateTime >= DATE_SUB(?, INTERVAL 12 MONTH) \
+             AND b.CreateTime < ? \
+             AND b.IsRefund = 0 \
+           GROUP BY b.Customer_ID, COALESCE(e.EmpName, be.EmpId) \
+         ) d \
+         GROUP BY staff_name",
+    )
+    .bind(&store_id)
+    .bind(end)
+    .bind(end)
+    .fetch_all(pool)
+    .await;
+    match r12_rows {
+        Ok(rows) => {
+            for row in rows {
+                let name: Option<String> = row.try_get("staff_name").ok().flatten();
+                let repurchase: i64 = row.try_get("repurchase_customers").unwrap_or(0);
+                let eligible: i64 = row.try_get("eligible_customers").unwrap_or(0);
+                let name = name.unwrap_or_else(|| "未知".to_string());
+                let rate = if eligible > 0 {
+                    (repurchase as f64) / (eligible as f64)
+                } else {
+                    0.0
+                };
+                r12_by_staff.insert(name, rate);
+            }
+        }
+        Err(err) => {
+            warn!(stage = "assemble_mysql", error = %err, "r12 query failed; skip r12_rate");
+        }
+    }
+    if r12_by_staff.is_empty() {
+        let r12_fallback_rows = sqlx::query(
+            "SELECT COALESCE(e.EmpName, b.CreateEmpId) AS staff_name, \
+                    COUNT(DISTINCT CASE WHEN d.day_count >= 2 THEN d.customer_id END) AS repurchase_customers, \
+                    COUNT(DISTINCT d.customer_id) AS eligible_customers \
+             FROM ( \
+               SELECT b.Customer_ID AS customer_id, COALESCE(e.EmpName, b.CreateEmpId) AS staff_name, \
+                      COUNT(DISTINCT DATE(b.CreateTime)) AS day_count \
+               FROM bills b \
+               LEFT JOIN employees e ON e.ID = b.CreateEmpId \
+               WHERE b.ClinicId = ? \
+                 AND b.CreateTime >= DATE_SUB(?, INTERVAL 12 MONTH) \
+                 AND b.CreateTime < ? \
+                 AND b.IsRefund = 0 \
+               GROUP BY b.Customer_ID, COALESCE(e.EmpName, b.CreateEmpId) \
+             ) d \
+             GROUP BY staff_name",
+        )
+        .bind(&store_id)
+        .bind(end)
+        .bind(end)
+        .fetch_all(pool)
+        .await;
+        match r12_fallback_rows {
+            Ok(rows) => {
+                for row in rows {
+                    let name: Option<String> = row.try_get("staff_name").ok().flatten();
+                    let repurchase: i64 = row.try_get("repurchase_customers").unwrap_or(0);
+                    let eligible: i64 = row.try_get("eligible_customers").unwrap_or(0);
+                    let name = name.unwrap_or_else(|| "未知".to_string());
+                    let rate = if eligible > 0 {
+                        (repurchase as f64) / (eligible as f64)
+                    } else {
+                        0.0
+                    };
+                    r12_by_staff.insert(name, rate);
+                }
+            }
+            Err(err) => {
+                warn!(stage = "assemble_mysql", error = %err, "r12 fallback query failed; skip r12_rate");
+            }
+        }
+    }
+
+    let mut staff_map: HashMap<String, serde_json::Map<String, Value>> = HashMap::new();
     for row in staff_mtd_rows {
         let name: Option<String> = row.try_get("staff_name").ok().flatten();
         let mtd: Option<Decimal> = row.try_get("mtd_gmv").ok().flatten();
@@ -368,6 +459,11 @@ pub async fn assemble_meeting_prebrief_daily_1_1_mysql(
             "today_gmv".to_string(),
             json!(today.and_then(|v| v.to_f64()).unwrap_or(0.0)),
         );
+    }
+    for (name, rate) in r12_by_staff {
+        let entry = staff_map.entry(name.clone()).or_default();
+        entry.insert("staff_name".to_string(), Value::String(name));
+        entry.insert("r12_rate".to_string(), json!(rate));
     }
     let staff_stats = staff_map
         .into_values()
