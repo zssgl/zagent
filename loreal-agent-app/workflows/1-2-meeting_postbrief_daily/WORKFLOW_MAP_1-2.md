@@ -14,7 +14,13 @@
 - `meeting_transcript`：会议文字记录（完整逐字稿或摘要均可）
 
 **可选输入**
-- `meeting_meta`：`biz_date`, `store_id`, `store_name`, `data_cutoff_time`, `meeting_time`, `attendees`
+- `meeting_meta`：用于补齐报头/落盘信息（若 1-1 报告已包含，可省略）
+  - `biz_date`：业务日期（用于标题与落盘文件名）
+  - `store_name`：门店名（用于标题）
+  - `data_cutoff_time`：数据截止时间（用于标题）
+  - `meeting_time`：会议时间（可选展示）
+  - `attendees`：参会人列表（可选展示）
+  - `store_id`：仅当需要系统侧关联门店时提供（否则可省略）
 - `user_overrides`：显式纠偏/补充（优先级高于 transcript）
 - `summary_style`：输出风格控制（精简/详细、是否保留“==已补齐”等标记）
 
@@ -23,7 +29,7 @@
 | 步骤 | 描述 | 输入（关键字段） | 数据来源 | 输出 | 状态 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- |
 | S0 请求接收 | 接收原始 input + context | `input`, `context` | 输入 | `raw_request` | 已实现 | 入口。 |
-| S1 规范化 | 解析 1-1 报告与 transcript，合并元信息 | `prebrief_report`, `meeting_transcript`, `meeting_meta` | 输入 | `normalized_request` | 部分实现 | 1-1 报告格式允许多种。 |
+| S1 规范化 | 解析 1-1 报告与 transcript，合并元信息 | `prebrief_report`, `meeting_transcript`, `meeting_meta` | 输入 | `normalized_request` | 部分实现 | 1-1 报告格式允许多种，meeting_meta 可选。 |
 | S2 完整性检查 | 校验必填字段 | `prebrief_report`, `meeting_transcript` | 规则 | `complete_request` / `missing_info_list` | 部分实现 | 缺 transcript 时直接失败。 |
 | S3 内容拆分 | 将 transcript 按话题/章节切片 | `meeting_transcript` | 规则 + llm | `section_chunks` | 缺失 | 建议与模板章节对齐。 |
 | S4 关键信息抽取 | 抽取纠偏信息、行动项、会议总结 | `section_chunks`, `user_overrides` | 规则 + llm | `extractions` | 缺失 | LLM 仅限文本抽取，不生成数字。 |
