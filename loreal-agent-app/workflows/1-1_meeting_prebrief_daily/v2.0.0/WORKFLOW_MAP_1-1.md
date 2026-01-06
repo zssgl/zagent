@@ -17,6 +17,7 @@
 - `store_name`, `data_cutoff_time`
 - `mtd.*_target`（月度目标）
 - 其它结构化字段：`staff_stats`, `customer_summary`, `key_items_mtd`, `task_execution`
+- 外部目标与计划输入（XLS）：`daily_targets`, `staff_targets`, `schedule_plan`（来源 `reference/*.xlsx`，后续可替换为接口/系统接入）
 
 ### 步骤地图
 
@@ -26,7 +27,7 @@
 | S1 规范化 | MySQL 装配 + input 覆盖合并，剥离 context | raw input | mysql + 输入 | `normalized_request` | 已实现 | 默认装配。 |
 | S2 完整性检查 | 校验必填字段 | `store_id`, `biz_date`, `his.*` | 输入或 mysql | `complete_request` / `missing_info_list` | 已实现 | `his` 由装配补齐，调用方可不传。 |
 | S3A 缺失信息处理 | 生成澄清请求（可选） | `missing_info_list` | 规则 | `clarification_request` | 缺失 | 暂无显式输出。 |
-| S4 执行 | 计算 facts/risks/checklist | `his`, `baselines`, `mtd`, `appointments_tomorrow`, `wecom_touch`, `staff_stats`, `customer_summary`, `key_items_mtd`, `task_execution` | mysql + 输入 + 规则 | `raw_result` | 已实现 | 多字段为 best-effort。 |
+| S4 执行 | 计算 facts/risks/checklist | `his`, `baselines`, `mtd`, `appointments_tomorrow`, `wecom_touch`, `staff_stats`, `customer_summary`, `key_items_mtd`, `task_execution`, `daily_targets`, `staff_targets`, `schedule_plan` | mysql + 输入 + 规则 | `raw_result` | 已实现 | 多字段为 best-effort。 |
 | S4.5 智能总结 | 基于 facts/risks/checklist 生成总结要点 | `facts_recap`, `risks`, `checklist` | 规则 + llm | `agent_summary` | 已实现 | LLM 失败时回退规则总结。 |
 | S5 结果校验 | 输出 schema 校验 | output JSON | 规则 | `final_result` / `error` | 已实现 | 不通过直接失败。 |
 | S6 交付与落盘 | 渲染报告 + 持久化 | `report_md`, `biz_date` | 规则 | `delivered` | 已实现 | 写入 `reports/`。 |
@@ -63,17 +64,17 @@
 - 管理人姓名：`staff_stats.staff_name`（已实现；优先 `billemployees`，为空 fallback `bills.CreateEmpId`）
 - 今日开单/消耗：`staff_stats.today_gmv/today_consumption`（部分实现：消耗目前置 0）
 - 本月累计开单/消耗：`staff_stats.mtd_gmv/mtd_consumption`（部分实现：消耗目前置 0）
-- 达成率/目标：缺失（需员工目标数据）
-- R12 回购率：缺失（当前占位 0）
+- 达成率/目标：缺失（可补齐：门诊业绩跟进表/业绩分解表等目标表，见 `reference/*.xlsx`，需导入并建立门店/员工映射）
+- R12 回购率：缺失（可补齐：`reference/sql代码/17、lifetime_detail 查询.sql` 产出 `lifetime_detail` 可用于计算 R12）
 - 智能总结：LLM 生成（已实现）
 
 #### 顾客摘要
 - 新客人数/GMV：`customer_summary.new.count/gmv`（已实现；按当日首单判断新客）
-- 新客来源分层：`customer_summary.new.sources`（部分实现：仅输出 `customers.LaiYuanID -> customdictionary.DisplayName`，未做业务渠道映射）
+- 新客来源分层：`customer_summary.new.sources`（部分实现：仅输出 `customers.LaiYuanID -> customdictionary.DisplayName`；可补齐：`reference/sql代码/14、创建病历编号和健康人关系直接写入表.sql` 已落 `bi.wechat_cu_service.客户来源`）
 - 老带新核验/美丽基金：缺失（需推荐人表/基金表与排除规则）
 - 老客人数/GMV：`customer_summary.old.count/gmv`（已实现）
 - 单项目顾客：`customer_summary.single_item_customers`（部分实现：近 12 个月品项去重=1，未排除促销/同义品项）
-- VIP/VVIP：`customer_summary.vip_customers`（部分实现：`customer_level_historys.new_level LIKE '%VIP%'`，无法区分 VVIP）
+- VIP/VVIP：`customer_summary.vip_customers`（部分实现：`customer_level_historys.new_level LIKE '%VIP%'`；可补齐：`bi.wechat_cu_service.会员等级`）
 - 智能总结：LLM 生成（已实现）
 
 #### 关键品项完成（本月至今）
@@ -101,33 +102,33 @@
 
 #### 明日生意准备
 - 明日预约人数与清单：`appointments_tomorrow`（已实现；`appointments` + `appointmentlines`）
-- 明日业绩目标：缺失（需运营目标输入）
+- 明日业绩目标：缺失（可补齐：业绩跟进表/业绩分解表含每日预约/业绩目标，见 `reference/*业绩*跟进表*.xlsx`）
 - 预约分群：缺失（需顾客标签/复购周期）
-- 当班医生/护士与人手风险：缺失（需排班表）
+- 当班医生/护士与人手风险：缺失（可补齐：部分门诊业绩跟进表含“排班/当班”，见 `reference/*业绩*跟进表*.xlsx`）
 
 #### 接下来几天
-- 专家日目标/预约：缺失
-- 未来 7 天目标与预约量：缺失
+- 专家日目标/预约：缺失（可补齐：业绩跟进表若包含“专家日/活动日”字段）
+- 未来 7 天目标与预约量：缺失（可补齐：业绩跟进表的每日目标/预约目标）
 - 客单差距测算：缺失
 - 单次客回店邀约：缺失
 - VIP 维护到店：缺失
 
-### 需要补齐的关键缺口（需甲方提供）
+### 需要补齐的关键缺口（含已提供参考）
 
-| 需甲方提供 | 对应章节/步骤 | 影响 |
+| 需甲方提供/现有参考 | 对应章节/步骤 | 影响 |
 | --- | --- | --- |
-| 月度目标（开单/消耗目标） | 今日经营摘要 / S4 执行 | 完成度无法稳定展示 |
-| 员工业绩目标与达成率口径 | 各健康管理人完成情况 / S4 执行 | 达成率与目标差距缺失 |
-| R12 回购率口径与数据源 | 各健康管理人完成情况 / S4 执行 | R12 仅占位 0 |
-| 新客渠道映射规则（老带新/平台等） | 顾客摘要 / S4 执行 | 渠道分层不准确 |
+| 月度目标（开单/消耗目标）已提供：`reference/2025年8月指标-0723.xlsx`（作为外部可选输入） | 今日经营摘要 / S4 执行 | 完成度可展示，但需导入与门店映射 |
+| 员工业绩目标与达成率口径：部分提供（门店级/每日目标见 `reference/*业绩*跟进表*.xlsx`，作为外部可选输入），员工维度仍缺 | 各健康管理人完成情况 / S4 执行 | 达成率与目标差距缺失 |
+| R12 回购率口径与数据源已提供：`reference/sql代码/17、lifetime_detail 查询.sql`（可纳入 workflow 数据装配） | 各健康管理人完成情况 / S4 执行 | R12 可计算，需接入 |
+| 新客渠道映射规则（老带新/平台等）：部分提供（`reference/sql代码/14、创建病历编号和健康人关系直接写入表.sql` 含客户来源原值） | 顾客摘要 / S4 执行 | 渠道分层仍需映射规则 |
 | 老带新/美丽基金核验规则与数据表 | 顾客摘要 / S4 执行 | 预警与核验缺失 |
 | 单项目/复购口径标准 | 顾客摘要 / S4 执行 | 单项目占比不可用 |
-| VVIP 定义与标签规则 | 顾客摘要 / S4 执行 | 仅能输出 VIP 粗粒度 |
+| VVIP 定义与标签规则：部分提供（会员等级见 `reference/sql代码/14、创建病历编号和健康人关系直接写入表.sql`，可纳入 workflow 数据装配） | 顾客摘要 / S4 执行 | 仅能输出 VIP 粗粒度 |
 | 关键品项 WOW/同期对比规则 | 关键品项完成 / S4 执行 | 趋势判断缺失 |
 | 扫码购数据接口与字段说明 | 关键品项完成 / S4 执行 | 扫码购模块缺失 |
 | 任务名单级明细口径与字段 | 任务执行情况 / S4 执行 | 无法输出名单 |
 | 企微任务回执与对话质量口径 | 任务执行情况 / S4 执行 | “有效对话比例”等缺失 |
-| 明日业绩目标与预约分群规则 | 明日生意准备 / S4 执行 | 无法输出分群与目标 |
-| 排班数据（医生/护士）与风险规则 | 明日生意准备 / S4 执行 | 人手风险无法判断 |
-| 未来 7 天/专家日计划数据 | 接下来几天 / S4 执行 | 全段缺失 |
+| 明日业绩目标与预约分群规则：部分提供（每日目标见 `reference/*业绩*跟进表*.xlsx`，作为外部可选输入），分群规则缺 | 明日生意准备 / S4 执行 | 无法输出分群与目标 |
+| 排班数据（医生/护士）与风险规则：部分提供（部分跟进表含“排班/当班”栏位，作为外部可选输入） | 明日生意准备 / S4 执行 | 人手风险判断规则缺失 |
+| 未来 7 天/专家日计划数据：部分提供（部分跟进表含每日/活动日目标，作为外部可选输入） | 接下来几天 / S4 执行 | 需定义展示口径与字段 |
 | 智能总结输出规则（风控/事实约束/引用字段范围） | 各章节智能总结 / S4.5 | LLM 输出不可审计 |
