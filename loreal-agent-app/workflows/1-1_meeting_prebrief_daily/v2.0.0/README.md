@@ -27,9 +27,8 @@ Send one request (minimal input + MySQL assembly on):
 ```json
 {
   "workflow": { "name": "meeting_prebrief_daily" },
-  "context": { "assemble": { "source": "mysql" } },
-  "input": {
-    "store_id": "<clinics.ID>",
+    "input": {
+      "store_id": "<clinics.ID>",
     "store_name": "<optional>",
     "biz_date": "2025-12-30",
     "data_cutoff_time": "16:12",
@@ -45,7 +44,7 @@ Notes:
 
 ## MySQL data assembly coverage (best-effort)
 
-When `context.assemble.source=mysql` is present, the workflow calls the MySQL tool to fill missing fields, then merges your provided `input` as overrides.
+The workflow calls the MySQL tool to fill missing fields, then merges your provided `input` as overrides.
 
 Currently filled:
 

@@ -11,7 +11,7 @@
 ## Workflow 步骤
 
 1. **接收请求**：输入最小字段（门店 + 日期 + 可选目标）
-2. **数据装配（可选）**：若开启 `context.assemble.source=mysql`，从 MySQL 取数补齐缺失字段（见下文）
+2. **数据装配（默认）**：默认从 MySQL 取数补齐缺失字段（见下文）
 3. **指标计算**：组装 `facts_recap`（今日、7D 基线、MTD、结构、Top 品项）
 4. **风险评估**：按 `rules.yml` 规则生成 `risks`（可审计：阈值 + 证据字段）
 5. **清单生成**：根据风险与明日预约生成 `checklist`（至少 3 条）
@@ -48,7 +48,7 @@ Agent policy 简述：
 
 ### 自动装配会补齐的字段（Best-effort）
 
-当 `context.assemble.source=mysql` 时，会从 MySQL 组装：
+默认从 MySQL 组装：
 
 - `his`：`gmv` / `visits` / `avg_ticket` / `top_items`，以及 `appointments`（今日预约数）/ `deals`（成交人数 best-effort）
 - `baselines.rolling_7d`：7D 日均（按天聚合后取 AVG）
@@ -123,5 +123,5 @@ Agent policy 简述：
 
 ## 开关与约定
 
-- 单请求自动取数开关：`context.assemble.source = "mysql"`
+- 默认开启 MySQL 装配（无需传 `context.assemble.source`）
 - 输出落盘目录：默认 `reports/`，可用环境变量 `REPORTS_DIR` 覆盖
