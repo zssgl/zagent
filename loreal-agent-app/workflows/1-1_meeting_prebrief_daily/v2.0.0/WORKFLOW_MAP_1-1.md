@@ -28,16 +28,16 @@
 
 ### 步骤地图
 
-| 步骤 | 描述 | 输入（关键字段） | 数据来源 | 工具 | 输出 | 状态 | 备注 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| S0 请求接收 | 接收原始 input + context | `input`, `context` | 输入 | 无 | `raw_request` | 已实现 | 入口。 |
-| S1 规范化 | MySQL 装配 + input 覆盖合并，剥离 context | raw input | mysql + 输入 | MySQL | `normalized_request` | 已实现 | 默认装配。 |
-| S2 完整性检查 | 校验必填字段 | `store_id`, `biz_date`, `his.*` | 输入或 mysql | 无 | `complete_request` / `missing_info_list` | 已实现 | `his` 由装配补齐，调用方可不传。 |
-| S3A 缺失信息处理 | 生成澄清请求（可选） | `missing_info_list` | 规则 | 无 | `clarification_request` | 缺失 | 暂无显式输出。 |
-| S4 执行 | 计算 facts/risks/checklist | `his`, `baselines`, `mtd`, `appointments_tomorrow`, `wecom_touch`, `staff_stats`, `customer_summary`, `key_items_mtd`, `task_execution` | mysql + 输入 + 规则 | MySQL | `raw_result` | 已实现 | 多字段为 best-effort。 |
-| S4.5 智能总结 | 基于 facts/risks/checklist 生成总结要点 | `facts_recap`, `risks`, `checklist` | 规则 + llm | LLM（可选） | `agent_summary` | 已实现 | LLM 失败时回退规则总结。 |
-| S5 结果校验 | 输出 schema 校验 | output JSON | 规则 | JSON Schema | `final_result` / `error` | 已实现 | 不通过直接失败。 |
-| S6 交付与落盘 | 渲染报告 + 持久化 | `report_md`, `biz_date` | 规则 | 文件系统 | `delivered` | 已实现 | 写入 `reports/`。 |
+| 步骤 | 描述 | 输入（关键字段） | 数据来源 | 输出 | 状态 | 备注 |
+| --- | --- | --- | --- | --- | --- | --- |
+| S0 请求接收 | 接收原始 input + context | `input`, `context` | 输入 | `raw_request` | 已实现 | 入口。 |
+| S1 规范化 | MySQL 装配 + input 覆盖合并，剥离 context | raw input | mysql + 输入 | `normalized_request` | 已实现 | 默认装配。 |
+| S2 完整性检查 | 校验必填字段 | `store_id`, `biz_date`, `his.*` | 输入或 mysql | `complete_request` / `missing_info_list` | 已实现 | `his` 由装配补齐，调用方可不传。 |
+| S3A 缺失信息处理 | 生成澄清请求（可选） | `missing_info_list` | 规则 | `clarification_request` | 缺失 | 暂无显式输出。 |
+| S4 执行 | 计算 facts/risks/checklist | `his`, `baselines`, `mtd`, `appointments_tomorrow`, `wecom_touch`, `staff_stats`, `customer_summary`, `key_items_mtd`, `task_execution` | mysql + 输入 + 规则 | `raw_result` | 已实现 | 多字段为 best-effort。 |
+| S4.5 智能总结 | 基于 facts/risks/checklist 生成总结要点 | `facts_recap`, `risks`, `checklist` | 规则 + llm | `agent_summary` | 已实现 | LLM 失败时回退规则总结。 |
+| S5 结果校验 | 输出 schema 校验 | output JSON | 规则 | `final_result` / `error` | 已实现 | 不通过直接失败。 |
+| S6 交付与落盘 | 渲染报告 + 持久化 | `report_md`, `biz_date` | 规则 | `delivered` | 已实现 | 写入 `reports/`。 |
 
 ### 输出
 
@@ -102,6 +102,11 @@
 - 名单级明细：大多缺失（仅 `missing_photo_list` 示例）
 - 群内交接比例/对话质量：缺失（需企微/任务回执）
 
+**部分实现说明**
+- 当前仅输出“比例类指标”，无名单级明细
+- 分母多用“当日到店人数”近似，未按严格业务口径校准
+- 企微对话与任务回执未接入，相关指标为空
+
 #### 明日生意准备
 - 明日预约人数与清单：`appointments_tomorrow`（已实现；`appointments` + `appointmentlines`）
 - 明日业绩目标：缺失（需运营目标输入）
@@ -115,30 +120,31 @@
 - 单次客回店邀约：缺失
 - VIP 维护到店：缺失
 
-### 工具清单
-
-| 工具 | 用途 | 状态 | 备注 |
-| --- | --- | --- | --- |
-| MySQL | 数据装配 | 已实现 | `context.assemble.source=mysql` |
-| LLM | 总结 + 计划选择 | 已实现 | 可选；使用 env 配置 |
-| 文件系统 | 报告落盘 | 已实现 | 可用 `REPORTS_DIR` 覆盖 |
-
 ### 需要补齐的关键缺口（基于当前实现）
 
+**规则缺口（口径/规则未定义）**
+| 缺口 | 对应章节/步骤 | 影响 |
+| --- | --- | --- |
+| 新客渠道映射规则（老带新/平台等） | 顾客摘要 / S4 执行 | 渠道分层不准确 |
+| 老带新/美丽基金核验规则 | 顾客摘要 / S4 执行 | 预警与核验缺失 |
+| 单项目/复购口径标准化 | 顾客摘要 / S4 执行 | 单项目占比不可用 |
+| VVIP 定义与标签规则 | 顾客摘要 / S4 执行 | 仅能输出 VIP 粗粒度 |
+| 关键品项 WOW/同期对比规则 | 关键品项完成 / S4 执行 | 趋势判断缺失 |
+| 任务执行口径（名单/比例/对话质量） | 任务执行情况 / S4 执行 | 指标一致性不足 |
+| 智能总结规则（风控/事实约束/引用字段范围） | 各章节智能总结 / S4.5 | LLM 输出不可审计 |
+
+**数据缺口（数据源未接入）**
 | 缺口 | 对应章节/步骤 | 影响 |
 | --- | --- | --- |
 | 月度目标来源（开单/消耗目标） | 今日经营摘要 / S4 执行 | 完成度无法稳定展示 |
-| 员工业绩目标与达成率 | 各健康管理人完成情况 / S4 执行 | 达成率与目标差距缺失 |
-| R12 回购率口径与数据源 | 各健康管理人完成情况 / S4 执行 | R12 仅占位 0 |
-| 新客渠道映射规则（老带新/平台等） | 顾客摘要 / S4 执行 | 渠道分层不准确 |
-| 老带新/美丽基金核验表与规则 | 顾客摘要 / S4 执行 | 预警与核验缺失 |
-| 单项目/复购口径标准化 | 顾客摘要 / S4 执行 | 单项目占比不可用 |
-| VVIP 定义与标签来源 | 顾客摘要 / S4 执行 | 仅能输出 VIP 粗粒度 |
-| 关键品项人数与同期/WOW | 关键品项完成 / S4 执行 | 趋势判断缺失 |
+| 员工业绩目标与达成率数据 | 各健康管理人完成情况 / S4 执行 | 达成率与目标差距缺失 |
+| R12 回购率数据 | 各健康管理人完成情况 / S4 执行 | R12 仅占位 0 |
+| 老带新/美丽基金相关表 | 顾客摘要 / S4 执行 | 无法校验与预警 |
+| 关键品项人数数据 | 关键品项完成 / S4 执行 | 人数指标缺失 |
 | 扫码购数据接口 | 关键品项完成 / S4 执行 | 扫码购模块缺失 |
 | 任务名单级明细（回访/对比照/术后/病历/处方） | 任务执行情况 / S4 执行 | 无法输出名单 |
-| 企微任务回执与对话质量指标 | 任务执行情况 / S4 执行 | “有效对话比例”等缺失 |
-| 明日业绩目标与预约分群 | 明日生意准备 / S4 执行 | 无法输出分群与目标 |
+| 企微任务回执与对话质量数据 | 任务执行情况 / S4 执行 | “有效对话比例”等缺失 |
+| 明日业绩目标与预约分群数据 | 明日生意准备 / S4 执行 | 无法输出分群与目标 |
 | 排班数据（医生/护士） | 明日生意准备 / S4 执行 | 人手风险无法判断 |
 | 未来 7 天/专家日计划数据 | 接下来几天 / S4 执行 | 全段缺失 |
-| 缺失信息澄清输出 | S3A 缺失信息处理 | 无法自动生成追问 |
+| 缺失信息澄清输出数据 | S3A 缺失信息处理 | 无法自动生成追问 |
