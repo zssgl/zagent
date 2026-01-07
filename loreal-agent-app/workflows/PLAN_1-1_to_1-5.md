@@ -2,26 +2,49 @@
 
 目标：本周内交付 1-1 到 1-5 的 workflow-map（已有的继续完善），并完成 metrics 对齐。
 
-### 清单
+### 清单（按 1-1 到 1-5 分组）
 
-| 文件名                            | 文件描述                                 | 责任方 | 截止时间 | 状态        |
-| ------------------------------ | ------------------------------------ | --- | ---- | --------- |
-| `TEMPLATE_1-1.md`              | 1-1 模板（已提供）                          | 沈   | 已提供  | 已提供       |
-| `TEMPLATE_1-2.md`              | 1-2 模板（已提供）                          | 沈   | 已提供  | 已提供       |
-| `TEMPLATE_1-3.md`              | 1-3 模板                               | 沈   | 周三   | 未提供       |
-| `TEMPLATE_1-4.md`              | 1-4 模板                               | 沈   | 周三   | 未提供       |
-| `TEMPLATE_1-5.md`              | 1-5 模板                               | 沈   | 周三   | 未提供       |
-| `MEETING_TRANSCRIPT_SAMPLE.md` | 会议记录样例（用于 1-2/1-5 试跑）                | 沈   | ⭐    | 待样例       |
-| `WORKFLOW_MAP_1-1.md`          | 1-1 workflow-map；缺失点见“需要补齐的关键缺口”     | 梁/沈 | 周三   | 待对齐       |
-| `WORKFLOW_MAP_1-2.md`          | 1-2 workflow-map；需会议记录样例，待1-1完全完成了再录 | 梁/沈 | ⭐    | 待对齐       |
-| `WORKFLOW_MAP_1-3.md`          | 1-3 workflow-map                     | 梁   | 周四   | 待模板       |
-| `WORKFLOW_MAP_1-4.md`          | 1-4 workflow-map                     | 梁   | 周四   | 待模板       |
-| `WORKFLOW_MAP_1-5.md`          | 1-5 workflow-map                     | 梁   | ⭐    | 待模板       |
-| `METRICS_MAP_1-1.md`           | 1-1 metrics map（需要对齐）                | 梁/沈 | 周三   | 待对齐       |
-| `METRICS_MAP_1-2.md`           | 1-2 metrics map（参照 1-1）              | 梁   | ⭐    | 待workflow |
-| `METRICS_MAP_1-3.md`           | 1-3 metrics map                      | 梁   | 周四+五 | 待workflow |
-| `METRICS_MAP_1-4.md`           | 1-4 metrics map                      | 梁   | 周四+五 | 待workflow |
-| `METRICS_MAP_1-5.md`           | 1-5 metrics map                      | 梁   | ⭐    | 待workflow |
+**1-1**
+
+| 文件名                   | 文件描述                             | 责任方 | 截止时间 | 状态  |
+| --------------------- | -------------------------------- | --- | ---- | --- |
+| `TEMPLATE_1-1.md`     | 1-1 模板（已提供）                      | 沈   | 已提供  | 已提供 |
+| `WORKFLOW_MAP_1-1.md` | 1-1 workflow-map；缺失点见“需要补齐的关键缺口” | 梁/沈 | 周三   | 待对齐 |
+| `METRICS_MAP_1-1.md`  | 1-1 metrics map（需要对齐）             | 梁/沈 | 周三   | 待对齐 |
+
+**1-2**
+
+| 文件名                      | 文件描述                                 | 责任方 | 截止时间 | 状态  |
+| ------------------------ | ------------------------------------ | --- | ---- | --- |
+| `TEMPLATE_1-2.md`        | 1-2 模板（已提供）                          | 沈   | 已提供  | 已提供 |
+| `WORKFLOW_MAP_1-2.md`    | 1-2 workflow-map；需会议记录样例，待1-1完全完成了再录 | 梁/沈 | ⭐    | 待对齐 |
+| `METRICS_MAP_1-2.md`     | 1-2 metrics map（参照 1-1）              | 梁   | ⭐    | 待workflow |
+| `MEETING_TRANSCRIPT_SAMPLE.md` | 会议记录样例（用于 1-2 试跑）              | 沈   | ⭐    | 待样例 |
+
+**1-3**
+
+| 文件名                   | 文件描述         | 责任方 | 截止时间 | 状态      |
+| --------------------- | ------------ | --- | ---- | ------- |
+| `TEMPLATE_1-3.md`     | 1-3 模板       | 沈   | 周三   | 未提供     |
+| `WORKFLOW_MAP_1-3.md` | 1-3 workflow-map | 梁 | 周四 | 待模板     |
+| `METRICS_MAP_1-3.md`  | 1-3 metrics map | 梁 | 周四+五 | 待workflow |
+
+**1-4**
+
+| 文件名                   | 文件描述         | 责任方 | 截止时间 | 状态      |
+| --------------------- | ------------ | --- | ---- | ------- |
+| `TEMPLATE_1-4.md`     | 1-4 模板       | 沈   | 周三   | 未提供     |
+| `WORKFLOW_MAP_1-4.md` | 1-4 workflow-map | 梁 | 周四 | 待模板     |
+| `METRICS_MAP_1-4.md`  | 1-4 metrics map | 梁 | 周四+五 | 待workflow |
+
+**1-5**
+
+| 文件名                      | 文件描述                     | 责任方 | 截止时间 | 状态      |
+| ------------------------ | ------------------------ | --- | ---- | ------- |
+| `TEMPLATE_1-5.md`        | 1-5 模板                   | 沈   | 周三   | 未提供     |
+| `WORKFLOW_MAP_1-5.md`    | 1-5 workflow-map         | 梁   | ⭐    | 待模板     |
+| `METRICS_MAP_1-5.md`     | 1-5 metrics map          | 梁   | ⭐    | 待workflow |
+| `MEETING_TRANSCRIPT_SAMPLE.md` | 会议记录样例（用于 1-5 试跑） | 沈 | ⭐ | 待样例 |
 
 ## 会议记录说明 ⭐
 
