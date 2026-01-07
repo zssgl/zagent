@@ -19,8 +19,8 @@
 | --- | --- | --- |
 | 今日开单金额（GMV） | 当日门店成交金额汇总 | `bills.PayAmount` 求和；过滤 `bills.ClinicId = store_id`、`bills.CreateTime` 在今日、`bills.IsRefund=0` |
 | 今日消耗 | 口径暂同开单 | 同“今日开单金额”；备注：`consumption_details`/`consumption_project_details` 在当前库存在大量空字段/数据稀疏，暂不作为取数来源 |
-| 今日到店人数 | 当日产生有效开单的顾客数 | `bills.Customer_ID` 去重计数；过滤同上 |
-| 今日成交人数 | 口径暂同到店人数 | 同“今日到店人数” |
+| 今日到店人数 | 当日到店顾客数（含未开单） | `visits.CustomerId` 去重计数；过滤 `visits.OrginizationId = store_id`、`visits.StartTime` 在今日、`visits.IsDeleted=0` |
+| 今日成交人数 | 当日产生有效开单的顾客数 | `bills.Customer_ID` 去重计数；过滤 `bills.ClinicId = store_id`、`bills.CreateTime` 在今日、`bills.IsRefund=0` |
 | 今日预约人数 | 当日预约到店的顾客数 | `appointments.CustomerId` 去重计数；过滤 `appointments.OrginizationId = store_id`、`appointments.StartTime` 在今日、`appointments.IsDelete=0` |
 | 今日客单价 | 当日人均开单金额 | `今日开单金额 / 今日到店人数`（分母为 0 返回 0） |
 | 今日新客人数 | 当日在本门店首次开单的顾客数 | 对今日开单顾客 `bills.Customer_ID`，若其在该门店 `MIN(bills.CreateTime)` 的日期等于 `biz_date` 计为新客 |
@@ -99,7 +99,7 @@
 
 ### 说明与已知简化
 - “消耗”相关字段目前均等于“开单金额”或固定为 0，需接入消耗明细表后替换。
-- 多数“到店人数”来自 `bills`，未覆盖“到店未开单”人群。
+- “到店人数”口径使用 `visits`，覆盖“到店未开单”人群。
 - 员工维度以 `billemployees` 为主，缺失时回退 `bills.CreateEmpId`。
 - 指标计算为 best-effort，缺失字段返回 0/空数组，不报错。
 
@@ -172,8 +172,8 @@
 
 | 指标 | 业务口径 | 字段口径（表/字段/过滤/计算） |
 | --- | --- | --- |
-| 专家日/活动日目标与预约 | 指定日期目标与预约进度 | 待接入：活动日计划表 |
-| 未来7天目标与预约 | 未来7天目标与预约量 | 预约可用 `appointments.StartTime`；目标仍需日目标表 |
-| 客单差距测算 | 为完成目标所需客单 | 待定义：目标/人数/客单计算规则 |
-| 单次客邀约 | 单次客回店邀约名单 | 待接入：单次客名单与邀约记录 |
-| VIP维护到店 | 长期未到店VIP维护名单 | 待接入：VIP定义与到店历史 |
+| 专家日/活动日目标与预约 | 指定日期目标与预约进度 | 预约进度可用 `appointments.StartTime` 按指定日期统计；目标仍需活动日计划表 |
+| 未来7天目标与预约 | 未来7天目标与预约量 | 预约量可用 `appointments.StartTime` 统计未来7日去重顾客数；目标仍需日目标表 |
+| 客单差距测算 | 为完成目标所需客单 | 可用 `目标金额 / 预计人数` 计算所需客单；预计人数可用未来7天预约去重顾客数或历史到店均值，需选定口径 |
+| 单次客邀约 | 单次客回店邀约名单 | 可先产出名单：近12个月 `bills` 按 `Customer_ID` 统计不同消费日期数=1 的顾客；邀约执行情况需另有触达记录表 |
+| VIP维护到店 | 长期未到店VIP维护名单 | 可用 `customer_level_historys.new_level` 标记 VIP/VVIP，结合 `visits`/`bills` 筛选近X天未到店；维护执行情况需另表 |
